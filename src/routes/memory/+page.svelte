@@ -155,9 +155,15 @@
 
 	<!-- Center Content -->
 	<div class="flex min-w-0 flex-1 flex-col">
-		<!-- Tab bar -->
-		<div class="border-b border-base-300 px-4 py-2">
-			<div role="tablist" class="tabs-bordered tabs tabs-lg">
+		<!-- Header -->
+		<div class="flex items-center justify-between border-b border-base-300 px-4 py-3">
+			<div>
+				<h1 class="text-lg font-semibold">Memory</h1>
+				<p class="text-sm opacity-50">
+					{stats.total} chunk{stats.total !== 1 ? 's' : ''} stored
+				</p>
+			</div>
+			<div role="tablist" class="tabs-boxed tabs tabs-sm">
 				<button
 					role="tab"
 					class="tab"
@@ -172,7 +178,7 @@
 					class:tab-active={activeTab === 'search'}
 					onclick={() => (activeTab = 'search')}
 				>
-					🔍 Vector Search
+					🔍 Search
 				</button>
 				<button
 					role="tab"

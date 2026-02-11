@@ -1,0 +1,10 @@
+{
+	"servers": {
+		"browser-tools": {
+			"type": "stdio",
+			"command": "npx",
+			"args": ["tsx", "src/mcp-browser-server.ts"],
+			"cwd": "${workspaceFolder}"
+		}
+	}
+}

@@ -159,10 +159,10 @@
 		{#each menuItems as item (item.label)}
 			<li>
 				{#if item.disabled}
-					<span class="cursor-not-allowed gap-3 opacity-40">
+					<span class="cursor-not-allowed gap-3 opacity-50">
 						{@render menuIcon(item.icon)}
 						{item.label}
-						<span class="badge badge-ghost badge-xs">Soon</span>
+						<span class="ml-auto badge badge-outline badge-xs text-[10px] opacity-60">Soon</span>
 					</span>
 				{:else}
 					<a href={item.href} class:active={item.href === currentRoute} class="gap-3">

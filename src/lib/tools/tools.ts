@@ -30,6 +30,10 @@ const registry = new Map<string, ToolHandler>();
 
 /** Register a tool handler */
 export function registerTool(handler: ToolHandler) {
+	if (!handler || !handler.definition) {
+		console.error('registerTool called with undefined handler or definition');
+		return;
+	}
 	registry.set(handler.definition.function.name, handler);
 }
 

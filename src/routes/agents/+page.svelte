@@ -138,10 +138,10 @@
 			/>
 		{:else}
 			<!-- Header -->
-			<div class="flex items-center justify-between border-b border-base-300 p-4">
+			<div class="flex items-center justify-between border-b border-base-300 px-4 py-3">
 				<div>
-					<h1 class="text-xl font-bold">Agents</h1>
-					<p class="text-sm opacity-60">
+					<h1 class="text-lg font-semibold">Agents</h1>
+					<p class="text-sm opacity-50">
 						{agents.length} agent{agents.length !== 1 ? 's' : ''}
 						{#if enabledCount > 0}
 							· {enabledCount} active
@@ -151,7 +151,9 @@
 						{/if}
 					</p>
 				</div>
-				<button class="btn btn-primary" onclick={() => (setupOpen = true)}> + New Agent </button>
+				<button class="btn btn-sm btn-primary" onclick={() => (setupOpen = true)}>
+					+ New Agent
+				</button>
 			</div>
 
 			<!-- Agent grid -->

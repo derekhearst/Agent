@@ -395,15 +395,20 @@
 
 	<!-- Center Chat -->
 	<div class="flex min-w-0 flex-1 flex-col">
-		<!-- Header with model selector -->
-		<div class="flex items-center justify-between border-b border-base-300 px-6 py-3">
-			<h2 class="text-sm font-medium opacity-70">
-				{#if activeSessionId}
-					{sessions.find((s) => s.id === activeSessionId)?.title || 'Chat'}
-				{:else}
-					New Chat
-				{/if}
-			</h2>
+		<!-- Header -->
+		<div class="flex items-center justify-between border-b border-base-300 px-4 py-3">
+			<div>
+				<h1 class="text-lg font-semibold">
+					{#if activeSessionId}
+						{sessions.find((s) => s.id === activeSessionId)?.title || 'Chat'}
+					{:else}
+						New Chat
+					{/if}
+				</h1>
+				<p class="text-sm opacity-50">
+					{messages.length} message{messages.length !== 1 ? 's' : ''}
+				</p>
+			</div>
 			<ModelSelector {currentModel} onModelChange={handleModelChange} />
 		</div>
 
