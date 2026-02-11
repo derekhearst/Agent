@@ -213,7 +213,7 @@ async function buildSystemPrompt(userMessage: string): Promise<string> {
 
 	// Search for relevant markdown files based on user message
 	try {
-		const allPaths = await getAllMemoryFilePaths();
+		const allPaths = await getAllMemoryFilePaths(undefined);
 		// Skip profile.md since it's already injected
 		const otherPaths = allPaths.filter((p) => p !== 'profile.md');
 
@@ -246,7 +246,7 @@ async function buildSystemPrompt(userMessage: string): Promise<string> {
 	// Search vector store for relevant past context
 	try {
 		if (userMessage) {
-			const memories = await searchMemoryInternal(userMessage, 3);
+			const memories = await searchMemoryInternal({ query: userMessage, limit: 3 });
 			if (memories.length > 0) {
 				const memoryText = memories
 					.map((m) => {

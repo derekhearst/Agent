@@ -1,9 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, chatSession, message } from '$lib/shared/db';
-import type { ChatMessage } from '$lib/chat/chat.remote';
+import type { ChatMessage } from '$lib/chat/chat';
 import { eq } from 'drizzle-orm';
-import { runAgent } from '$lib/chat/chat.remote';
+import { runAgent } from '$lib/chat/chat';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const { sessionId, model } = await request.json();

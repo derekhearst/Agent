@@ -70,8 +70,8 @@ import {
 	createNoteTool,
 	readNoteTool,
 	listNotesTool
-} from '$lib/tools/memory';
-import { askAgentTool, listAgentsTool } from '$lib/tools/agents';
+} from '$lib/memory/memory';
+import { askAgentTool, listAgentsTool } from '$lib/agents/agents';
 import {
 	browseUrlTool,
 	browserActTool,

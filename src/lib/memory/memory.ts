@@ -1,4 +1,4 @@
-// Agent memory tools — recall, save, create/read/list notes
+// Memory utilities - pure functions, types, and tool handlers
 import type { ToolHandler } from '$lib/tools/tools';
 import {
 	searchMemoryInternal,
@@ -8,12 +8,38 @@ import {
 	type MemoryType,
 	type FileNode
 } from '$lib/memory/memory.remote';
-
-// Need to re-export listMemoryFiles functionality for the tool
 import { dev } from '$app/environment';
 import { readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import { existsSync } from 'node:fs';
+
+// ============== PURE FUNCTIONS ==============
+
+/** Chunk a conversation into overlapping segments for embedding */
+export function chunkConversation(
+	messages: Array<{ role: string; content: string }>,
+	chunkSize: number = 4
+): string[] {
+	if (messages.length === 0) return [];
+
+	const chunks: string[] = [];
+	const step = Math.max(1, Math.floor(chunkSize / 2)); // 50% overlap
+
+	for (let i = 0; i < messages.length; i += step) {
+		const slice = messages.slice(i, i + chunkSize);
+		const text = slice.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+
+		if (text.trim()) {
+			chunks.push(text);
+		}
+
+		// Don't create tiny trailing chunks
+		if (i + chunkSize >= messages.length) break;
+	}
+
+	return chunks;
+}
+
+// ============== INTERNAL HELPERS ==============
 
 function getMemoryDir(): string {
 	if (dev) {
@@ -27,7 +53,11 @@ const MEMORY_DIR = getMemoryDir();
 async function listMemoryFilesInternal(dir?: string): Promise<FileNode[]> {
 	const targetDir = dir ? join(MEMORY_DIR, dir) : MEMORY_DIR;
 
-	if (!existsSync(targetDir)) return [];
+	try {
+		await readdir(targetDir);
+	} catch {
+		return [];
+	}
 
 	const entries = await readdir(targetDir, { withFileTypes: true });
 	const nodes: FileNode[] = [];
@@ -61,6 +91,8 @@ async function listMemoryFilesInternal(dir?: string): Promise<FileNode[]> {
 	return nodes;
 }
 
+// ============== TOOL HANDLERS ==============
+
 /** recall_memory — search the vector store and relevant notes */
 export const recallMemoryTool: ToolHandler = {
 	definition: {
@@ -89,7 +121,7 @@ export const recallMemoryTool: ToolHandler = {
 		const query = args.query as string;
 		const limit = (args.limit as number) || 5;
 
-		const results = await searchMemoryInternal(query, limit);
+		const results = await searchMemoryInternal({ query, limit });
 
 		if (results.length === 0) {
 			return { content: 'No relevant memories found.' };
@@ -144,7 +176,7 @@ export const saveMemoryTool: ToolHandler = {
 		const type = (args.type as MemoryType) || 'knowledge';
 		const source = (args.source as string) || 'Conversation';
 
-		const id = await storeChunk(content, { type, source });
+		const id = await storeChunk({ content, meta: { type, source } });
 		return {
 			content: `Saved to memory (id: ${id}): "${content.slice(0, 100)}${content.length > 100 ? '...' : ''}"`
 		};
@@ -192,13 +224,13 @@ export const createNoteTool: ToolHandler = {
 		if (append) {
 			try {
 				const existing = await readMemoryFile(path);
-				await writeMemoryFile(path, existing + '\n\n' + content);
+				await writeMemoryFile({ path, content: existing + '\n\n' + content });
 			} catch {
 				// File doesn't exist, just create it
-				await writeMemoryFile(path, content);
+				await writeMemoryFile({ path, content });
 			}
 		} else {
-			await writeMemoryFile(path, content);
+			await writeMemoryFile({ path, content });
 		}
 
 		return { content: `Note saved to "${path}"` };

@@ -1,12 +1,12 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, chatSession, message, agentRun } from '$lib/shared/db';
-import { generateSessionTitle } from '$lib/chat/chat.remote';
-import type { ChatMessage } from '$lib/chat/chat.remote';
+import { generateSessionTitle } from '$lib/chat/chat';
+import type { ChatMessage } from '$lib/chat/chat';
 import { eq, desc } from 'drizzle-orm';
-import { runAgent } from '$lib/chat/chat.remote';
-import { storeChunks, chunkConversation } from '$lib/memory/memory.remote';
-import { readMemoryFile } from '$lib/memory/memory.remote';
+import { runAgent } from '$lib/chat/chat';
+import { storeChunks, readMemoryFile } from '$lib/memory/memory.remote';
+import { chunkConversation } from '$lib/memory/memory';
 
 /**
  * Detect @agentname mentions and inject agent context into conversation.

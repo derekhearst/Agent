@@ -5,9 +5,8 @@ import { db, vectorClient, message } from '$lib/shared/db';
 import { eq } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { dev } from '$app/environment';
-import { mkdir, readdir, readFile, writeFile, unlink, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, rm } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
-import { existsSync } from 'node:fs';
 
 // ============== TYPES ==============
 
@@ -51,13 +50,15 @@ const MEMORY_DIR = getMemoryDir();
 
 /** Ensure the memory directory and a default profile.md exist */
 async function ensureMemoryDir(): Promise<void> {
-	if (!existsSync(MEMORY_DIR)) {
+	const memoryDirFile = Bun.file(join(MEMORY_DIR, '.keep'));
+	if (!(await memoryDirFile.exists())) {
 		await mkdir(MEMORY_DIR, { recursive: true });
 	}
 
 	const profilePath = join(MEMORY_DIR, 'profile.md');
-	if (!existsSync(profilePath)) {
-		await writeFile(
+	const profileFile = Bun.file(profilePath);
+	if (!(await profileFile.exists())) {
+		await Bun.write(
 			profilePath,
 			`# User Profile
 
@@ -71,45 +72,55 @@ async function ensureMemoryDir(): Promise<void> {
 ## Notes
 
 - 
-`,
-			'utf-8'
+`
 		);
 	}
 }
 
 /** Read a memory file by relative path */
-export async function readMemoryFile(relativePath: string): Promise<string> {
+export const readMemoryFile = query(z.string(), async (relativePath) => {
 	const fullPath = join(MEMORY_DIR, relativePath);
-	return await readFile(fullPath, 'utf-8');
-}
+	const file = Bun.file(fullPath);
+	if (!(await file.exists())) {
+		throw new Error(`File not found: ${relativePath}`);
+	}
+	return await file.text();
+});
+
+const writeMemoryFileSchema = z.object({
+	path: z.string(),
+	content: z.string()
+});
 
 /** Write a memory file by relative path, creating directories as needed */
-export async function writeMemoryFile(relativePath: string, content: string): Promise<void> {
-	const fullPath = join(MEMORY_DIR, relativePath);
+export const writeMemoryFile = command(writeMemoryFileSchema, async ({ path, content }) => {
+	const fullPath = join(MEMORY_DIR, path);
 	const dir = dirname(fullPath);
-	if (!existsSync(dir)) {
+	const dirFile = Bun.file(join(dir, '.keep'));
+	if (!(await dirFile.exists())) {
 		await mkdir(dir, { recursive: true });
 	}
-	await writeFile(fullPath, content, 'utf-8');
-}
+	await Bun.write(fullPath, content);
+	return { success: true };
+});
 
 /** Delete a memory file or directory */
 async function deleteMemoryFileFs(relativePath: string): Promise<void> {
 	const fullPath = join(MEMORY_DIR, relativePath);
-	const stats = await stat(fullPath);
-	if (stats.isDirectory()) {
-		await rm(fullPath, { recursive: true });
-	} else {
-		await unlink(fullPath);
-	}
+	// rm with recursive: true handles both files and directories
+	await rm(fullPath, { recursive: true, force: true });
 }
 
 /** Recursively list all memory files as a tree */
-async function listMemoryFilesInternal(dir?: string): Promise<FileNode[]> {
+const listMemoryFiles = query(z.string().optional(), async (dir) => {
 	await ensureMemoryDir();
 	const targetDir = dir ? join(MEMORY_DIR, dir) : MEMORY_DIR;
 
-	if (!existsSync(targetDir)) return [];
+	try {
+		await readdir(targetDir);
+	} catch {
+		return [];
+	}
 
 	const entries = await readdir(targetDir, { withFileTypes: true });
 	const nodes: FileNode[] = [];
@@ -125,7 +136,7 @@ async function listMemoryFilesInternal(dir?: string): Promise<FileNode[]> {
 		const relativePath = relative(MEMORY_DIR, join(targetDir, entry.name));
 
 		if (entry.isDirectory()) {
-			const children = await listMemoryFilesInternal(relativePath);
+			const children = await listMemoryFiles(relativePath);
 			nodes.push({
 				name: entry.name,
 				path: relativePath,
@@ -142,22 +153,28 @@ async function listMemoryFilesInternal(dir?: string): Promise<FileNode[]> {
 	}
 
 	return nodes;
-}
-
+});
 /** Read the profile.md file (always injected into system prompt) */
-export async function getProfileMemory(): Promise<string | null> {
+export const getProfileMemory = query(async () => {
 	try {
 		await ensureMemoryDir();
-		return await readMemoryFile('profile.md');
+		const fullPath = join(MEMORY_DIR, 'profile.md');
+		const file = Bun.file(fullPath);
+		if (!(await file.exists())) return null;
+		return await file.text();
 	} catch {
 		return null;
 	}
-}
+});
 
 /** Get all markdown file paths recursively (flat list) */
-export async function getAllMemoryFilePaths(dir?: string): Promise<string[]> {
+export const getAllMemoryFilePaths = query(z.string().optional(), async (dir) => {
 	const targetDir = dir ? join(MEMORY_DIR, dir) : MEMORY_DIR;
-	if (!existsSync(targetDir)) return [];
+	try {
+		await readdir(targetDir);
+	} catch {
+		return [];
+	}
 
 	const entries = await readdir(targetDir, { withFileTypes: true });
 	const paths: string[] = [];
@@ -173,7 +190,7 @@ export async function getAllMemoryFilePaths(dir?: string): Promise<string[]> {
 	}
 
 	return paths;
-}
+});
 
 // ============== PRIVATE: EMBEDDINGS ==============
 
@@ -273,11 +290,17 @@ const deleteEmbeddingStmt = vectorClient.prepare(
 	`DELETE FROM memory_embeddings WHERE chunk_id = ?`
 );
 
+const storeChunkSchema = z.object({
+	content: z.string(),
+	meta: z.object({
+		sessionId: z.string().optional(),
+		type: z.enum(['conversation', 'knowledge', 'note']),
+		source: z.string()
+	})
+});
+
 /** Store a single text chunk with its embedding in the vector store */
-export async function storeChunk(
-	content: string,
-	meta: { sessionId?: string; type: MemoryType; source: string }
-): Promise<number> {
+export const storeChunk = command(storeChunkSchema, async ({ content, meta }) => {
 	const embedding = await generateEmbedding(content);
 
 	const result = insertChunkStmt.run(meta.sessionId || null, content, meta.type, meta.source);
@@ -289,15 +312,21 @@ export async function storeChunk(
 	insertEmbeddingStmt.run(chunkId, Buffer.from(float32.buffer));
 
 	return chunkId;
-}
+});
+
+const storeChunksSchema = z.array(
+	z.object({
+		content: z.string(),
+		meta: z.object({
+			sessionId: z.string().optional(),
+			type: z.enum(['conversation', 'knowledge', 'note']),
+			source: z.string()
+		})
+	})
+);
 
 /** Store multiple text chunks with their embeddings (batch) */
-export async function storeChunks(
-	chunks: Array<{
-		content: string;
-		meta: { sessionId?: string; type: MemoryType; source: string };
-	}>
-): Promise<number[]> {
+export const storeChunks = command(storeChunksSchema, async (chunks) => {
 	if (chunks.length === 0) return [];
 
 	const texts = chunks.map((c) => c.content);
@@ -327,10 +356,15 @@ export async function storeChunks(
 
 	insertMany();
 	return ids;
-}
+});
+
+const searchMemoryInternalSchema = z.object({
+	query: z.string(),
+	limit: z.number().optional().default(5)
+});
 
 /** Search the vector store for chunks semantically similar to the query */
-export async function searchMemoryInternal(query: string, limit: number = 5): Promise<SearchResult[]> {
+export const searchMemoryInternal = query(searchMemoryInternalSchema, async ({ query, limit }) => {
 	const embedding = await generateEmbedding(query);
 	const float32 = new Float32Array(embedding);
 
@@ -354,13 +388,14 @@ export async function searchMemoryInternal(query: string, limit: number = 5): Pr
 		createdAt: row.created_at,
 		distance: row.distance
 	}));
-}
+});
 
 /** Delete a memory chunk and its embedding */
-export function deleteChunk(id: number): void {
+export const deleteChunk = command(z.number(), async (id) => {
 	deleteEmbeddingStmt.run(id);
 	deleteChunkStmt.run(id);
-}
+	return { success: true };
+});
 
 /** Get vector store statistics */
 function getStatsInternal(): VectorStats {
@@ -371,31 +406,6 @@ function getStatsInternal(): VectorStats {
 		byType[row.type] = row.count;
 	}
 	return { total, byType };
-}
-
-/** Chunk a conversation into overlapping segments for embedding */
-export function chunkConversation(
-	messages: Array<{ role: string; content: string }>,
-	chunkSize: number = 4
-): string[] {
-	if (messages.length === 0) return [];
-
-	const chunks: string[] = [];
-	const step = Math.max(1, Math.floor(chunkSize / 2)); // 50% overlap
-
-	for (let i = 0; i < messages.length; i += step) {
-		const slice = messages.slice(i, i + chunkSize);
-		const text = slice.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
-
-		if (text.trim()) {
-			chunks.push(text);
-		}
-
-		// Don't create tiny trailing chunks
-		if (i + chunkSize >= messages.length) break;
-	}
-
-	return chunks;
 }
 
 // ============== PRIVATE: UTILITIES ==============
@@ -435,7 +445,7 @@ function chunkText(text: string, chunkSize: number, overlap: number): string[] {
 
 export const getFileTree = query(async () => {
 	await ensureMemoryDir();
-	return await listMemoryFilesInternal();
+	return await listMemoryFiles(undefined);
 });
 
 export const getFileContent = query(z.string(), async (path) => {
@@ -452,7 +462,7 @@ const searchSchema = z.object({
 });
 
 export const searchMemory = query(searchSchema, async ({ query, limit }) => {
-	return await searchMemoryInternal(query, limit);
+	return await searchMemoryInternal({ query, limit });
 });
 
 export const getVectorStats = query(async () => {
@@ -471,7 +481,7 @@ const createFileSchema = z.object({
 });
 
 export const createFile = command(createFileSchema, async ({ path, content }) => {
-	await writeMemoryFile(path, content);
+	await writeMemoryFile({ path, content });
 	await getFileTree().refresh();
 	return { success: true, path };
 });
@@ -482,7 +492,7 @@ const updateFileSchema = z.object({
 });
 
 export const updateFile = command(updateFileSchema, async ({ path, content }) => {
-	await writeMemoryFile(path, content);
+	await writeMemoryFile({ path, content });
 	await getFileContent(path).refresh();
 	return { success: true, path };
 });
@@ -630,10 +640,10 @@ export const extractMemories = command(extractSchema, async ({ sessionId }) => {
 				const path = item.suggestedPath.endsWith('.md')
 					? item.suggestedPath
 					: `${item.suggestedPath}.md`;
-				await writeMemoryFile(
+				await writeMemoryFile({
 					path,
-					`# ${item.suggestedPath.split('/').pop()?.replace('.md', '') || 'Note'}\n\n${item.content}\n`
-				);
+					content: `# ${item.suggestedPath.split('/').pop()?.replace('.md', '') || 'Note'}\n\n${item.content}\n`
+				});
 				filesCreated++;
 			} catch (err) {
 				console.error('Failed to create memory file:', err);
@@ -650,4 +660,18 @@ export const extractMemories = command(extractSchema, async ({ sessionId }) => {
 		filesCreated,
 		message: `Extracted ${ids.length} memories${filesCreated > 0 ? ` and created ${filesCreated} note files` : ''}`
 	};
+});
+
+// ============== DELETE MEMORY PATH ==============
+
+export const deleteMemoryPath = command(z.string(), async (relativePath) => {
+	const fullPath = join(MEMORY_DIR, relativePath);
+
+	try {
+		// rm with recursive: true and force: true handles files and directories
+		await rm(fullPath, { recursive: true, force: true });
+	} catch {
+		// Path may not exist
+	}
+	return { success: true };
 });
