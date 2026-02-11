@@ -2,10 +2,90 @@
 import { streamChatWithTools } from '$lib/server/openrouter';
 import type { ChatMessage } from '$lib/server/openrouter';
 import { getToolDefinitions, executeTool, hasTools } from '$lib/agent/tools';
+import { getProfileMemory, getAllMemoryFilePaths, readMemoryFile } from '$lib/server/memory-files';
+import { searchMemory } from '$lib/server/vector-store';
 
 const MAX_TOOL_ITERATIONS = 5;
 
-const TOOL_SYSTEM_PROMPT = `You have access to tools that you can call when needed. Use the search_web tool when the user asks about current events, recent news, real-time data, or anything you're unsure about that would benefit from up-to-date information. When you use search results, always cite your sources with URLs. Do not call tools unless you actually need external information to answer the question.`;
+const TOOL_SYSTEM_PROMPT = `You have access to tools that you can call when needed. Use the search_web tool when the user asks about current events, recent news, real-time data, or anything you're unsure about that would benefit from up-to-date information. When you use search results, always cite your sources with URLs. Do not call tools unless you actually need external information to answer the question.
+
+You have memory tools available:
+- recall_memory: Search your long-term memory for past conversations, facts, and knowledge. Use this when the user references something from the past.
+- save_memory: Save important facts, preferences, or decisions to long-term memory. Use this when the user shares preferences, makes important decisions, or tells you something worth remembering.
+- create_note: Create persistent markdown notes organized in folders. Use for structured knowledge (recipes, project docs, guides, etc.).
+- read_note: Read a specific note file.
+- list_notes: Browse the notes file tree.
+
+When the user shares preferences, important facts, or asks you to remember something, proactively use save_memory or create_note to persist it. You don't need to ask permission to save memories.`;
+
+/**
+ * Build a dynamic system prompt with memory context injected.
+ */
+async function buildSystemPrompt(userMessage: string): Promise<string> {
+	let prompt = TOOL_SYSTEM_PROMPT;
+
+	// Always inject profile.md
+	try {
+		const profile = await getProfileMemory();
+		if (profile && profile.trim()) {
+			prompt += `\n\n## User Profile\n${profile}`;
+		}
+	} catch {
+		// Profile not available, skip
+	}
+
+	// Search for relevant markdown files based on user message
+	try {
+		const allPaths = await getAllMemoryFilePaths();
+		// Skip profile.md since it's already injected
+		const otherPaths = allPaths.filter((p) => p !== 'profile.md');
+
+		if (otherPaths.length > 0 && userMessage) {
+			// For a small number of files, just inject them all
+			if (otherPaths.length <= 5) {
+				const contents: string[] = [];
+				for (const p of otherPaths) {
+					try {
+						const content = await readMemoryFile(p);
+						if (content.trim()) {
+							contents.push(`### ${p}\n${content}`);
+						}
+					} catch {
+						// skip unreadable files
+					}
+				}
+				if (contents.length > 0) {
+					prompt += `\n\n## Memory Notes\n${contents.join('\n\n')}`;
+				}
+			} else {
+				// For many files, just list them so the agent knows what's available
+				prompt += `\n\n## Available Notes\nYou have ${otherPaths.length} note files. Use list_notes and read_note to access them. Files: ${otherPaths.join(', ')}`;
+			}
+		}
+	} catch {
+		// Memory files not available, skip
+	}
+
+	// Search vector store for relevant past context
+	try {
+		if (userMessage) {
+			const memories = await searchMemory(userMessage, 3);
+			if (memories.length > 0) {
+				const memoryText = memories
+					.map((m) => {
+						const similarity = Math.round((1 - m.distance) * 100);
+						return `- (${similarity}% match, ${m.type}) ${m.content}`;
+					})
+					.join('\n');
+				prompt += `\n\n## Related Past Context\n${memoryText}`;
+			}
+		}
+	} catch {
+		// Vector search not available, skip
+	}
+
+	return prompt;
+}
 
 export type AgentEvent =
 	| { type: 'content'; content: string }
@@ -36,11 +116,12 @@ export async function runAgent(
 		return await streamSimple(messages, model, onEvent);
 	}
 
+	// Build dynamic system prompt with memory context
+	const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
+	const systemPrompt = await buildSystemPrompt(lastUserMsg);
+
 	// Inject system prompt for tool-aware models
-	const augmentedMessages: ChatMessage[] = [
-		{ role: 'system', content: TOOL_SYSTEM_PROMPT },
-		...messages
-	];
+	const augmentedMessages: ChatMessage[] = [{ role: 'system', content: systemPrompt }, ...messages];
 
 	let fullContent = '';
 

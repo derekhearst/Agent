@@ -55,10 +55,9 @@
 		},
 		{
 			label: 'Memory',
-			href: '#',
+			href: '/memory',
 			icon: 'brain',
-			active: false,
-			disabled: true
+			active: false
 		}
 	];
 </script>

@@ -6,6 +6,7 @@ import { generateSessionTitle } from '$lib/server/openrouter';
 import type { ChatMessage } from '$lib/server/openrouter';
 import { eq } from 'drizzle-orm';
 import { runAgent } from '$lib/agent/runner';
+import { storeChunks, chunkConversation } from '$lib/server/vector-store';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const { sessionId, content, model } = await request.json();
@@ -146,6 +147,28 @@ export const POST: RequestHandler = async ({ request }) => {
 					...(newTitle ? { newTitle } : {})
 				});
 				controller.enqueue(encoder.encode(`data: ${doneData}\n\n`));
+
+				// Auto-store latest exchange in vector memory (fire-and-forget)
+				try {
+					const lastMessages = messages.slice(-4); // last 2 pairs
+					lastMessages.push({ role: 'assistant', content: fullContent });
+					const sessionTitle = newTitle || session.title || 'Chat';
+					const chunks = chunkConversation(lastMessages);
+					if (chunks.length > 0) {
+						storeChunks(
+							chunks.map((text) => ({
+								content: text,
+								meta: {
+									sessionId,
+									type: 'conversation' as const,
+									source: `Chat: ${sessionTitle}`
+								}
+							}))
+						).catch((err) => console.error('Auto-store memory failed:', err));
+					}
+				} catch (err) {
+					console.error('Auto-store memory setup failed:', err);
+				}
 			} catch (error) {
 				console.error('Stream error:', error);
 				const errorData = JSON.stringify({

@@ -202,6 +202,43 @@
 	async function sendMessage(content: string) {
 		if (!content.trim() || isStreaming) return;
 
+		// Handle /remember command
+		if (content.trim().toLowerCase() === '/remember') {
+			if (!activeSessionId) return;
+
+			// Show a system-style message
+			const rememberMsg: Message = {
+				id: crypto.randomUUID(),
+				sessionId: activeSessionId,
+				role: 'assistant',
+				content: '🧠 Extracting memories from this conversation...',
+				createdAt: new Date().toISOString()
+			};
+			messages = [...messages, rememberMsg];
+
+			try {
+				const res = await fetch('/api/memory/extract', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ sessionId: activeSessionId })
+				});
+
+				const result = await res.json();
+
+				if (result.error) {
+					rememberMsg.content = `**Error:** ${result.error}`;
+				} else {
+					const items = result.extracted || [];
+					rememberMsg.content = `🧠 **Memory extraction complete!**\n\n**${result.chunksStored}** memories stored${result.filesCreated > 0 ? `, **${result.filesCreated}** note files created` : ''}.\n\n${items.length > 0 ? '**Extracted:**\n' + items.map((item: string) => `- ${item}`).join('\n') : ''}`;
+				}
+				messages = [...messages]; // trigger reactivity
+			} catch (error) {
+				rememberMsg.content = `**Error:** ${error instanceof Error ? error.message : 'Memory extraction failed'}`;
+				messages = [...messages];
+			}
+			return;
+		}
+
 		// Auto-create session if none exists
 		if (!activeSessionId) {
 			await createSession();

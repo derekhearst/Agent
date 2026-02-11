@@ -62,5 +62,17 @@ export function hasTools(): boolean {
 
 // ------ Register all tools below ------
 import { searchWebTool } from './search';
+import {
+	recallMemoryTool,
+	saveMemoryTool,
+	createNoteTool,
+	readNoteTool,
+	listNotesTool
+} from './memory';
 
 registerTool(searchWebTool);
+registerTool(recallMemoryTool);
+registerTool(saveMemoryTool);
+registerTool(createNoteTool);
+registerTool(readNoteTool);
+registerTool(listNotesTool);
