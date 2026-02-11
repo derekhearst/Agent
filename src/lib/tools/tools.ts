@@ -29,9 +29,11 @@ export interface ToolHandler {
 const registry = new Map<string, ToolHandler>();
 
 /** Register a tool handler */
-export function registerTool(handler: ToolHandler) {
+export function registerTool(handler: ToolHandler, toolName?: string) {
 	if (!handler || !handler.definition) {
-		console.error('registerTool called with undefined handler or definition');
+		console.error(
+			`registerTool called with undefined handler or definition${toolName ? ` (${toolName})` : ''}`
+		);
 		return;
 	}
 	registry.set(handler.definition.function.name, handler);
@@ -75,7 +77,7 @@ import {
 	readNoteTool,
 	listNotesTool
 } from '$lib/memory/memory';
-import { askAgentTool, listAgentsTool } from '$lib/agents/agents';
+import { askAgentTool, listAgentsTool } from '$lib/agents/agent-tools';
 import {
 	browseUrlTool,
 	browserActTool,
@@ -83,7 +85,16 @@ import {
 	browserScreenshotTool,
 	browserCloseTool
 } from '$lib/tools/browser';
-import { getFinancesTool } from '$lib/tools/budget';
+import { getFinancesTool, createCategoryTool, assignCategoryTool, updateTransactionNotesTool } from '$lib/tools/budget';
+import { searchEmailTool, readEmailTool, listEmailsTool } from '$lib/tools/google/gmail';
+import { listCalendarEventsTool, checkAvailabilityTool } from '$lib/tools/google/calendar';
+import {
+	saveRecipeTool,
+	createMealPlanTool,
+	searchRecipesTool,
+	addToFredMeyerCartTool,
+	completeFredMeyerOrderTool
+} from '$lib/recipes/recipe-tools';
 
 registerTool(searchWebTool);
 registerTool(recallMemoryTool);
@@ -99,3 +110,18 @@ registerTool(browserExtractTool);
 registerTool(browserScreenshotTool);
 registerTool(browserCloseTool);
 registerTool(getFinancesTool);
+registerTool(createCategoryTool);
+registerTool(assignCategoryTool);
+registerTool(updateTransactionNotesTool);
+registerTool(searchEmailTool);
+registerTool(readEmailTool);
+registerTool(listEmailsTool);
+registerTool(listCalendarEventsTool);
+registerTool(checkAvailabilityTool);
+registerTool(saveRecipeTool);
+registerTool(createMealPlanTool);
+registerTool(searchRecipesTool);
+registerTool(addToFredMeyerCartTool);
+registerTool(completeFredMeyerOrderTool);
+
+console.log(`🔧 Registered ${registry.size} tools: ${Array.from(registry.keys()).join(', ')}`);

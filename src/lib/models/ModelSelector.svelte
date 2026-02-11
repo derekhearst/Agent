@@ -21,24 +21,11 @@
 
 	let models = $state<ModelInfo[]>([]);
 	let search = $state('');
-	let isOpen = $state(false);
 	let isLoading = $state(false);
-	let dropdownRef: HTMLDivElement | undefined = $state();
 
 	// Fetch models on mount
 	$effect(() => {
 		fetchModels();
-	});
-
-	// Close dropdown on outside click
-	$effect(() => {
-		function handleClickOutside(e: MouseEvent) {
-			if (dropdownRef && !dropdownRef.contains(e.target as Node)) {
-				isOpen = false;
-			}
-		}
-		document.addEventListener('click', handleClickOutside);
-		return () => document.removeEventListener('click', handleClickOutside);
 	});
 
 	async function fetchModels() {
@@ -53,7 +40,7 @@
 	}
 
 	let filteredModels = $derived.by(() => {
-		if (!search.trim()) return models.slice(0, 50); // Show top 50 by default
+		if (!search.trim()) return models.slice(0, 50);
 		const q = search.toLowerCase();
 		return models
 			.filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q))
@@ -68,14 +55,16 @@
 
 	function selectModel(id: string) {
 		onModelChange(id);
-		isOpen = false;
 		search = '';
+		// Close dropdown by removing focus
+		if (document.activeElement instanceof HTMLElement) {
+			document.activeElement.blur();
+		}
 	}
 
 	function formatPrice(price: string): string {
 		const num = parseFloat(price);
 		if (num === 0) return 'Free';
-		// Price is per token, show per 1M tokens
 		const perMillion = num * 1_000_000;
 		if (perMillion < 0.01) return '<$0.01/M';
 		return `$${perMillion.toFixed(2)}/M`;
@@ -86,13 +75,9 @@
 	}
 </script>
 
-<div class="relative" bind:this={dropdownRef}>
-	<button
-		type="button"
-		class="btn gap-1 font-normal btn-ghost btn-xs"
-		onclick={() => (isOpen = !isOpen)}
-		title="Select model"
-	>
+<!-- DaisyUI CSS focus-based dropdown -->
+<div class="dropdown dropdown-end">
+	<div tabindex="0" role="button" class="btn gap-1 font-normal btn-ghost btn-xs">
 		<span class="max-w-48 truncate text-xs">{selectedModelName}</span>
 		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3 w-3">
 			<path
@@ -101,29 +86,28 @@
 				clip-rule="evenodd"
 			/>
 		</svg>
-	</button>
+	</div>
+	<div
+		class="dropdown-content menu
+		 mt-1 w-96 rounded-lg border border-base-300 bg-base-200 p-0 shadow-xl"
+	>
+		<!-- Search -->
+		<div class="border-b border-base-300 p-2">
+			<input
+				type="text"
+				bind:value={search}
+				placeholder="Search models..."
+				class="input-bordered input input-sm w-full"
+			/>
+		</div>
 
-	{#if isOpen}
-		<div
-			class="absolute top-full right-0 z-50 mt-1 w-96 rounded-lg border border-base-300 bg-base-200 shadow-xl"
-		>
-			<!-- Search -->
-			<div class="border-b border-base-300 p-2">
-				<input
-					type="text"
-					bind:value={search}
-					placeholder="Search models..."
-					class="input-bordered input input-sm w-full"
-				/>
-			</div>
-
-			<!-- Auto option -->
-			<div class="border-b border-base-300">
+		<!-- Auto option -->
+		<ul class="border-b border-base-300">
+			<li>
 				<button
 					type="button"
-					class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-base-300"
-					class:bg-primary={currentModel === 'openrouter/auto'}
-					class:text-primary-content={currentModel === 'openrouter/auto'}
+					class="flex w-full items-center gap-2 rounded-none px-3 py-2 text-left text-sm"
+					class:active={currentModel === 'openrouter/auto'}
 					onclick={() => selectModel('openrouter/auto')}
 				>
 					<div class="flex-1">
@@ -132,23 +116,24 @@
 					</div>
 					<span class="badge badge-xs badge-success">Free</span>
 				</button>
-			</div>
+			</li>
+		</ul>
 
-			<!-- Model list -->
-			<div class="max-h-72 overflow-y-auto">
-				{#if isLoading}
-					<div class="flex items-center justify-center p-4">
-						<span class="loading loading-sm loading-spinner"></span>
-					</div>
-				{:else if filteredModels.length === 0}
-					<div class="p-4 text-center text-sm opacity-50">No models found</div>
-				{:else}
-					{#each filteredModels as model (model.id)}
+		<!-- Model list -->
+		<ul class="max-h-72 overflow-y-auto">
+			{#if isLoading}
+				<li class="flex items-center justify-center p-4">
+					<span class="loading loading-sm loading-spinner"></span>
+				</li>
+			{:else if filteredModels.length === 0}
+				<li class="p-4 text-center text-sm opacity-50">No models found</li>
+			{:else}
+				{#each filteredModels as model (model.id)}
+					<li>
 						<button
 							type="button"
-							class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-base-300"
-							class:bg-primary={model.id === currentModel}
-							class:text-primary-content={model.id === currentModel}
+							class="flex w-full items-center gap-2 rounded-none px-3 py-1.5 text-left text-sm"
+							class:active={model.id === currentModel}
 							onclick={() => selectModel(model.id)}
 						>
 							<div class="min-w-0 flex-1">
@@ -173,9 +158,9 @@
 								{/if}
 							</div>
 						</button>
-					{/each}
-				{/if}
-			</div>
-		</div>
-	{/if}
+					</li>
+				{/each}
+			{/if}
+		</ul>
+	</div>
 </div>

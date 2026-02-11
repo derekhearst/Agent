@@ -209,7 +209,7 @@
 						<div class="text-center">
 							<div class="mb-4 text-6xl">📝</div>
 							<h2
-								class="mb-2 bg-gradient-to-r from-secondary to-accent bg-clip-text text-xl font-bold text-transparent"
+								class="mb-2 bg-linear-to-r from-secondary to-accent bg-clip-text text-xl font-bold text-transparent"
 							>
 								Memory Notes
 							</h2>

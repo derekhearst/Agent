@@ -16,7 +16,8 @@
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
 		"db:studio": "drizzle-kit studio",
-		"mcp:browser": "npx tsx src/mcp-browser-server.ts"
+		"mcp:browser": "npx tsx src/mcp-browser-server.ts",
+		"google:setup": "bun run src/lib/tools/google/setup-oauth.ts"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^2.0.2",
@@ -50,6 +51,7 @@
 		"@browserbasehq/stagehand": "^3.0.8",
 		"@openrouter/sdk": "^0.8.0",
 		"croner": "^10.0.1",
+		"googleapis": "^171.4.0",
 		"highlight.js": "^11.11.1",
 		"marked": "^17.0.1",
 		"node-notifier": "^10.0.1",

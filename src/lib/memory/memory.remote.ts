@@ -588,7 +588,7 @@ export const extractMemories = command(extractSchema, async ({ sessionId }) => {
 			'Content-Type': 'application/json'
 		},
 		body: JSON.stringify({
-			model: 'openrouter/auto',
+			model: 'moonshotai/kimi-k2.5',
 			messages: [
 				{ role: 'system', content: EXTRACTION_PROMPT },
 				{ role: 'user', content: conversationText }

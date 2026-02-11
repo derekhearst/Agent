@@ -117,7 +117,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	}));
 
 	// Use session model or provided model
-	const chatModel = model || session.model || 'openrouter/auto';
+	const chatModel = model || session.model || 'moonshotai/kimi-k2.5';
 
 	// Resolve @agent mentions
 	const lastMsg = messages[messages.length - 1]?.content || '';
@@ -129,6 +129,9 @@ export const POST: RequestHandler = async ({ request }) => {
 	const readable = new ReadableStream({
 		async start(controller) {
 			const encoder = new TextEncoder();
+
+			// Send immediate heartbeat so UI knows stream is alive
+			controller.enqueue(encoder.encode(`data: ${JSON.stringify({ heartbeat: true })}\n\n`));
 
 			try {
 				fullContent = await runAgent(

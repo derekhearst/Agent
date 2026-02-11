@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { generateAgentConfig } from '$lib/agents/agents.remote';
+	import ModelSelector from '$lib/models/ModelSelector.svelte';
 
 	interface Props {
 		open: boolean;
@@ -31,7 +32,7 @@
 	let editPrompt = $state('');
 	let editCron = $state('');
 	let editCronHuman = $state('');
-	let editModel = $state('openrouter/auto');
+	let editModel = $state('moonshotai/kimi-k2.5');
 
 	function reset() {
 		step = 'describe';
@@ -44,7 +45,7 @@
 		editPrompt = '';
 		editCron = '';
 		editCronHuman = '';
-		editModel = 'openrouter/auto';
+		editModel = 'moonshotai/kimi-k2.5';
 	}
 
 	function handleClose() {
@@ -68,7 +69,7 @@
 			editPrompt = config.systemPrompt || '';
 			editCron = config.cronSchedule || '';
 			editCronHuman = config.cronHuman || '';
-			editModel = config.model || 'openrouter/auto';
+			editModel = config.model || 'moonshotai/kimi-k2.5';
 
 			step = 'review';
 		} catch (err) {
@@ -162,13 +163,8 @@
 							/>
 						</div>
 						<div>
-							<label class="label text-sm font-medium" for="agent-model">Model</label>
-							<input
-								id="agent-model"
-								type="text"
-								class="input-bordered input input-sm w-full"
-								bind:value={editModel}
-							/>
+							<label class="label text-sm font-medium">Model</label>
+							<ModelSelector currentModel={editModel} onModelChange={(m) => editModel = m} />
 						</div>
 					</div>
 

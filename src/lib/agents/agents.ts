@@ -2,7 +2,8 @@
 import { Cron } from 'croner';
 import notifier from 'node-notifier';
 import { db, agent, agentRun } from '$lib/shared/db';
-import { desc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
+import { env } from '$env/dynamic/private';
 import {
 	writeMemoryFile,
 	readMemoryFile,
@@ -11,7 +12,7 @@ import {
 } from '$lib/memory/memory.remote';
 import { chatSimple, chatWithTools } from '$lib/chat/chat';
 import type { ChatMessage } from '$lib/chat/chat';
-import { getToolDefinitions, executeTool, hasTools, type ToolHandler } from '$lib/tools/tools';
+import { getToolDefinitions, executeTool, hasTools } from '$lib/tools/tools';
 
 // ============== TYPES ==============
 
@@ -62,29 +63,39 @@ function notifyAgentComplete(agentName: string, status: 'success' | 'error', sum
 async function buildAgentSystemPrompt(agentConfig: AgentConfig): Promise<string> {
 	let prompt = agentConfig.systemPrompt;
 
-	prompt += `\n\n## Available Tools
-You have access to the following tools:
-- search_web: Search the web for current information. Always cite sources with URLs.
-- recall_memory: Search vector memory for past knowledge and conversations.
-- save_memory: Save important facts to vector memory.
-- create_note: Create/update markdown notes. Your notes are scoped to your memory path: "${agentConfig.memoryPath}/".
-- read_note: Read a specific note file.
-- list_notes: Browse available note files.
-- browse_url: Navigate to a URL in a web browser and get page content + screenshot.
-- browser_act: Perform an action on the browser page (click, type, scroll, etc.).
-- browser_extract: Extract specific information from the current browser page.
-- browser_screenshot: Take a screenshot of the current browser page.
-- browser_close: Close the browser session when done.
-- get_finances: Retrieve a read-only financial overview from Actual Budget — account balances, budget breakdown, and recent transactions. Use when asked about finances, spending, budget, or money.
+	prompt += `\n\n## Available Tools — USE PROACTIVELY
+You have tools and should use them immediately without asking for permission or clarification.
 
-For browsing tasks, use browse_url to navigate, then browser_act to interact. You'll receive screenshots showing page state.
+### Tools
+- search_web: Search the web. Always cite sources with URLs.
+- recall_memory / save_memory: Long-term vector memory for facts and knowledge.
+- create_note / read_note / list_notes: Markdown notes scoped to "${agentConfig.memoryPath}/".
+- browse_url / browser_act / browser_extract / browser_screenshot / browser_close: Web browser.
+- get_finances: Actual Budget - account balances, budget breakdown, transactions.
+- search_email / read_email / list_emails: Gmail access (FULL READ - no permission needed).
+- list_calendar_events / check_availability: Google Calendar access.
+
+### Critical Rules
+1. BE PROACTIVE — use tools immediately, don't ask clarifying questions
+2. For email tasks: search → read → summarize (never just list and ask)
+3. For purchases/orders: check finances AND search emails to cross-reference
+4. Gmail/Calendar have full read access — just use them directly
 
 ## Your Memory
 You have two special files:
-- "${agentConfig.memoryPath}/memory.md" — Your persistent long-term memory. Read this at the start of each run to recall past work.
-- "${agentConfig.memoryPath}/temp.md" — Temporary notes for this run only. This is cleared at the start of each run.
+- "${agentConfig.memoryPath}/memory.md" — Your persistent long-term memory.
+- "${agentConfig.memoryPath}/temp.md" — Temporary notes for this run only.
 
-Always read your memory.md first, then work through your task, and update memory.md with any important findings or state changes before finishing.`;
+Read memory.md first, work through your task, and update it with important findings before finishing.`;
+
+	// Inject ATK credentials if available and agent prompt mentions ATK
+	if (env.ATK_EMAIL && env.ATK_PASSWORD && agentConfig.systemPrompt.toLowerCase().includes('atk')) {
+		prompt += `\n\n## America's Test Kitchen Credentials
+When you need to log in to americastestkitchen.com:
+- Email: ${env.ATK_EMAIL}
+- Password: ${env.ATK_PASSWORD}
+Use browser_act to fill in the login form. Navigate to the sign-in page first if needed.`;
+	}
 
 	// Inject the agent's memory.md content
 	try {
@@ -527,166 +538,5 @@ const globalForScheduler = globalThis as unknown as { agentScheduler: AgentSched
 export const scheduler = globalForScheduler.agentScheduler || new AgentScheduler();
 globalForScheduler.agentScheduler = scheduler;
 
-// ============== TOOL HANDLERS ==============
-
-async function getAgentContext(
-	agentData: {
-		id: string;
-		name: string;
-		description: string;
-		memoryPath: string;
-		cronSchedule: string;
-		enabled: boolean;
-		lastRunAt: Date | null;
-		lastRunStatus: string | null;
-	},
-	question?: string
-): Promise<{ content: string }> {
-	const parts: string[] = [];
-
-	// Agent info
-	parts.push(`## Agent: ${agentData.name}`);
-	parts.push(`Description: ${agentData.description}`);
-	parts.push(`Schedule: ${agentData.cronSchedule}`);
-	parts.push(`Enabled: ${agentData.enabled ? 'Yes' : 'No'}`);
-	parts.push(
-		`Last run: ${agentData.lastRunAt ? agentData.lastRunAt.toLocaleString() : 'Never'} (${agentData.lastRunStatus || 'N/A'})`
-	);
-
-	// Read memory.md
-	try {
-		const memory = await readMemoryFile(`${agentData.memoryPath}/memory.md`);
-		if (memory.trim()) {
-			parts.push(`\n### Long-Term Memory\n${memory}`);
-		}
-	} catch {
-		parts.push('\n### Long-Term Memory\n(No memory file yet)');
-	}
-
-	// Read temp.md (latest run notes)
-	try {
-		const temp = await readMemoryFile(`${agentData.memoryPath}/temp.md`);
-		if (temp.trim()) {
-			parts.push(`\n### Latest Run Notes\n${temp}`);
-		}
-	} catch {
-		// No temp file
-	}
-
-	// Get last 3 runs
-	const recentRuns = await db.query.agentRun.findMany({
-		where: eq(agentRun.agentId, agentData.id),
-		orderBy: [desc(agentRun.startedAt)],
-		limit: 3
-	});
-
-	if (recentRuns.length > 0) {
-		parts.push('\n### Recent Runs');
-		for (const run of recentRuns) {
-			const duration = run.duration ? `${(run.duration / 1000).toFixed(1)}s` : 'N/A';
-			const output = run.output
-				? run.output.substring(0, 500) + (run.output.length > 500 ? '...' : '')
-				: run.error || 'No output';
-			parts.push(
-				`\n**${run.startedAt?.toLocaleString()}** — ${run.status} (${duration})\n${output}`
-			);
-		}
-	}
-
-	if (question) {
-		parts.push(`\n---\nUser's question about this agent: ${question}`);
-	}
-
-	return { content: parts.join('\n') };
-}
-
-/** ask_agent — query a specific agent's memory and recent activity */
-export const askAgentTool: ToolHandler = {
-	definition: {
-		type: 'function',
-		function: {
-			name: 'ask_agent',
-			description:
-				"Query a scheduled agent's memory, recent run output, and status. Use this to check what an agent has been working on, its latest findings, or its current state.",
-			parameters: {
-				type: 'object',
-				properties: {
-					agentName: {
-						type: 'string',
-						description:
-							'The name of the agent to query (e.g., "news-monitor", "research-assistant")'
-					},
-					question: {
-						type: 'string',
-						description:
-							'Optional specific question to focus the context retrieval. If omitted returns general status.'
-					}
-				},
-				required: ['agentName']
-			}
-		}
-	},
-	async execute(args) {
-		const agentName = args.agentName as string;
-		const question = args.question as string | undefined;
-
-		// Find the agent
-		const agentData = await db.query.agent.findFirst({
-			where: eq(agent.name, agentName)
-		});
-
-		if (!agentData) {
-			// Try fuzzy match
-			const allAgents = await db.query.agent.findMany();
-			const match = allAgents.find(
-				(a) =>
-					a.name.toLowerCase().includes(agentName.toLowerCase()) ||
-					a.description.toLowerCase().includes(agentName.toLowerCase())
-			);
-
-			if (!match) {
-				const names = allAgents.map((a) => a.name).join(', ');
-				return {
-					content: `Agent "${agentName}" not found. Available agents: ${names || 'none'}`
-				};
-			}
-
-			return await getAgentContext(match, question);
-		}
-
-		return await getAgentContext(agentData, question);
-	}
-};
-
-/** list_agents — list all configured agents */
-export const listAgentsTool: ToolHandler = {
-	definition: {
-		type: 'function',
-		function: {
-			name: 'list_agents',
-			description:
-				'List all scheduled AI agents with their names, descriptions, schedules, and current status.',
-			parameters: {
-				type: 'object',
-				properties: {}
-			}
-		}
-	},
-	async execute() {
-		const agents = await db.query.agent.findMany({
-			orderBy: [desc(agent.updatedAt)]
-		});
-
-		if (agents.length === 0) {
-			return { content: 'No agents configured. Create agents in the Agents tab.' };
-		}
-
-		const lines = agents.map((a) => {
-			const status = a.enabled ? '🟢' : '⚪';
-			const lastRun = a.lastRunAt ? a.lastRunAt.toLocaleString() : 'Never';
-			return `${status} **${a.name}** — ${a.description}\n   Schedule: ${a.cronSchedule} | Last run: ${lastRun} (${a.lastRunStatus || 'N/A'})`;
-		});
-
-		return { content: `## Scheduled Agents (${agents.length})\n\n${lines.join('\n\n')}` };
-	}
-};
+// Tool exports moved to agent-tools.ts to avoid circular imports
+export { askAgentTool, listAgentsTool } from './agent-tools';

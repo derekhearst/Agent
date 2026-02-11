@@ -31,7 +31,7 @@ export const getSessionMessages = query(z.string(), async (sessionId) => {
 
 const createSessionSchema = z.object({
 	title: z.string().optional().default('New Chat'),
-	model: z.string().optional().default('openrouter/auto')
+	model: z.string().optional().default('moonshotai/kimi-k2.5')
 });
 
 export const createSession = command(createSessionSchema, async (data) => {

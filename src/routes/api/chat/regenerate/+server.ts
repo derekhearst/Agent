@@ -31,13 +31,16 @@ export const POST: RequestHandler = async ({ request }) => {
 		content: msg.content
 	}));
 
-	const chatModel = model || session.model || 'openrouter/auto';
+	const chatModel = model || session.model || 'moonshotai/kimi-k2.5';
 
 	let fullContent = '';
 
 	const readable = new ReadableStream({
 		async start(controller) {
 			const encoder = new TextEncoder();
+
+			// Send immediate heartbeat so UI knows stream is alive
+			controller.enqueue(encoder.encode(`data: ${JSON.stringify({ heartbeat: true })}\n\n`));
 
 			try {
 				fullContent = await runAgent(messages, chatModel, (event) => {

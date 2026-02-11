@@ -11,6 +11,7 @@
 		model?: string | null;
 		sources?: Array<{ title: string; url: string }>;
 		screenshots?: string[];
+		toolsUsed?: Array<{ tool: string; args: Record<string, unknown>; durationMs: number }>;
 		onRegenerate?: () => void;
 		onEdit?: () => void;
 	}
@@ -25,6 +26,7 @@
 		model,
 		sources,
 		screenshots,
+		toolsUsed,
 		onRegenerate,
 		onEdit
 	}: Props = $props();
@@ -45,6 +47,56 @@
 		// Show just the model name part after the provider prefix
 		const parts = m.split('/');
 		return parts.length > 1 ? parts.slice(1).join('/') : m;
+	}
+
+	function getToolIcon(tool: string): string {
+		if (
+			tool.startsWith('search_email') ||
+			tool.startsWith('read_email') ||
+			tool.startsWith('list_email')
+		)
+			return '📧';
+		if (tool.startsWith('list_calendar') || tool.startsWith('check_availability')) return '📅';
+		if (tool === 'search_web') return '🔍';
+		if (tool === 'recall_memory' || tool === 'save_memory') return '🧠';
+		if (
+			tool.startsWith('create_note') ||
+			tool.startsWith('read_note') ||
+			tool.startsWith('list_note')
+		)
+			return '📝';
+		if (tool === 'get_finances') return '💰';
+		if (tool.startsWith('browse') || tool.startsWith('browser')) return '🌐';
+		if (tool.startsWith('ask_agent') || tool.startsWith('list_agent')) return '🤖';
+		return '⚙️';
+	}
+
+	function getToolShortLabel(tool: string, args: Record<string, unknown>): string {
+		const short = (s: string, max = 50) => (s.length > max ? s.slice(0, max) + '…' : s);
+		switch (tool) {
+			case 'search_email':
+				return `Search email: "${short((args.query as string) || '')}"`;
+			case 'read_email':
+				return `Read email ${args.message_id || ''}`;
+			case 'list_emails':
+				return `List ${args.label || 'INBOX'} emails`;
+			case 'list_calendar_events':
+				return `Calendar (next ${args.days_ahead || 7} days)`;
+			case 'check_availability':
+				return `Availability: ${args.date || ''}`;
+			case 'search_web':
+				return `Web search: "${short((args.query as string) || '')}"`;
+			case 'recall_memory':
+				return `Memory search: "${short((args.query as string) || '')}"`;
+			case 'save_memory':
+				return 'Save to memory';
+			case 'get_finances':
+				return `Finances${args.month ? ` (${args.month})` : ''}`;
+			case 'browse_url':
+				return `Browse: ${short((args.url as string) || '')}`;
+			default:
+				return tool;
+		}
 	}
 </script>
 
@@ -81,6 +133,46 @@
 			{#if model}<span class="opacity-70">{shortModel(model)}</span>{/if}
 			{#if timestamp}<span>{formatTime(timestamp)}</span>{/if}
 			{#if durationMs}<span class="opacity-70">({formatDuration(durationMs)})</span>{/if}
+			{#if toolsUsed && toolsUsed.length > 0}
+				<div class="dropdown dropdown-bottom">
+					<div
+						tabindex="0"
+						role="button"
+						class="flex cursor-pointer items-center gap-1.5 rounded-full bg-base-200/50 px-2 py-0.5 select-none hover:bg-base-200"
+					>
+						<svg class="h-3 w-3 text-warning" viewBox="0 0 24 24" fill="currentColor">
+							<path
+								d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
+							/>
+						</svg>
+						<span class="text-base-content/80"
+							>Used {toolsUsed.length} tool{toolsUsed.length > 1 ? 's' : ''}</span
+						>
+						<svg class="h-3 w-3 text-base-content/50" viewBox="0 0 20 20" fill="currentColor">
+							<path
+								fill-rule="evenodd"
+								d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+								clip-rule="evenodd"
+							/>
+						</svg>
+					</div>
+					<div
+						tabindex="0"
+						class="dropdown-content z-50 mt-1 max-w-md min-w-max rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-xl"
+					>
+						{#each toolsUsed as entry, i (i)}
+							<div class="flex items-center gap-2 rounded px-2 py-0.5 text-xs hover:bg-base-200">
+								<span class="text-xs text-success">✓</span>
+								<span class="text-sm">{getToolIcon(entry.tool)}</span>
+								<span class="flex-1 text-base-content"
+									>{getToolShortLabel(entry.tool, entry.args)}</span
+								>
+								<span class="text-base-content/50">{(entry.durationMs / 1000).toFixed(1)}s</span>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
 		</div>
 		<div class="chat-bubble max-w-[85%] bg-base-300 text-base-content">
 			{#if sources && sources.length > 0}

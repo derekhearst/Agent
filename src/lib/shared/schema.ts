@@ -1,14 +1,7 @@
-// Shared database setup — Drizzle ORM + sqlite-vec for vector storage
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import Database from 'better-sqlite3';
-import * as sqliteVec from 'sqlite-vec';
+// Schema-only file for drizzle-kit (no SvelteKit runtime imports)
+// Keep in sync with db.ts table definitions!
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
-import { relations } from 'drizzle-orm';
-import { env } from '$env/dynamic/private';
 
-// ============== SCHEMA ==============
-
-// Legacy table - can be removed later
 export const task = sqliteTable('task', {
 	id: text('id')
 		.primaryKey()
@@ -17,7 +10,6 @@ export const task = sqliteTable('task', {
 	priority: integer('priority').notNull().default(1)
 });
 
-// Chat sessions
 export const chatSession = sqliteTable('chat_session', {
 	id: text('id')
 		.primaryKey()
@@ -33,7 +25,6 @@ export const chatSession = sqliteTable('chat_session', {
 		.$defaultFn(() => new Date())
 });
 
-// Chat messages
 export const message = sqliteTable('message', {
 	id: text('id')
 		.primaryKey()
@@ -49,7 +40,6 @@ export const message = sqliteTable('message', {
 		.$defaultFn(() => new Date())
 });
 
-// Scheduled agents
 export const agent = sqliteTable('agent', {
 	id: text('id')
 		.primaryKey()
@@ -59,7 +49,7 @@ export const agent = sqliteTable('agent', {
 	systemPrompt: text('system_prompt').notNull(),
 	cronSchedule: text('cron_schedule').notNull(),
 	model: text('model').notNull().default('moonshotai/kimi-k2.5'),
-	memoryPath: text('memory_path').notNull(), // e.g. "agent/taskname"
+	memoryPath: text('memory_path').notNull(),
 	enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
 	lastRunAt: integer('last_run_at', { mode: 'timestamp' }),
 	lastRunStatus: text('last_run_status', { enum: ['success', 'error', 'running'] }),
@@ -71,7 +61,6 @@ export const agent = sqliteTable('agent', {
 		.$defaultFn(() => new Date())
 });
 
-// Agent execution log
 export const agentRun = sqliteTable('agent_run', {
 	id: text('id')
 		.primaryKey()
@@ -81,8 +70,8 @@ export const agentRun = sqliteTable('agent_run', {
 		.references(() => agent.id, { onDelete: 'cascade' }),
 	status: text('status', { enum: ['running', 'success', 'error'] }).notNull(),
 	output: text('output').notNull().default(''),
-	toolCalls: text('tool_calls'), // JSON array of tool calls
-	duration: integer('duration'), // milliseconds
+	toolCalls: text('tool_calls'),
+	duration: integer('duration'),
 	startedAt: integer('started_at', { mode: 'timestamp' })
 		.notNull()
 		.$defaultFn(() => new Date()),
@@ -90,16 +79,12 @@ export const agentRun = sqliteTable('agent_run', {
 	error: text('error')
 });
 
-// Models cache (replaces in-memory cache)
 export const modelsCache = sqliteTable('models_cache', {
 	id: text('id').primaryKey(),
 	data: text('data').notNull(),
 	fetchedAt: integer('fetched_at').notNull()
 });
 
-// ============== RECIPE / MEAL PLANNING SCHEMA ==============
-
-// Recipes
 export const recipe = sqliteTable('recipe', {
 	id: text('id')
 		.primaryKey()
@@ -112,14 +97,11 @@ export const recipe = sqliteTable('recipe', {
 		.notNull()
 		.default('ai'),
 	cuisine: text('cuisine'),
-	prepTime: integer('prep_time'), // minutes
-	cookTime: integer('cook_time'), // minutes
+	prepTime: integer('prep_time'),
+	cookTime: integer('cook_time'),
 	servings: integer('servings').notNull().default(2),
-	// JSON: Array<{ stepNumber: number, title: string, description: string, duration?: string }>
 	steps: text('steps').notNull().default('[]'),
-	// JSON: Array<{ name: string, quantity: string, unit?: string, category?: string }>
 	ingredients: text('ingredients').notNull().default('[]'),
-	// JSON: Array<string>
 	tags: text('tags').notNull().default('[]'),
 	isFavorite: integer('is_favorite', { mode: 'boolean' }).notNull().default(false),
 	notes: text('notes'),
@@ -131,12 +113,11 @@ export const recipe = sqliteTable('recipe', {
 		.$defaultFn(() => new Date())
 });
 
-// Meal plans (weekly)
 export const mealPlan = sqliteTable('meal_plan', {
 	id: text('id')
 		.primaryKey()
 		.$defaultFn(() => crypto.randomUUID()),
-	weekStartDate: text('week_start_date').notNull(), // ISO date "2026-02-09"
+	weekStartDate: text('week_start_date').notNull(),
 	mealCount: integer('meal_count').notNull().default(5),
 	servingsPerMeal: integer('servings_per_meal').notNull().default(2),
 	status: text('status', { enum: ['draft', 'active', 'completed'] })
@@ -151,7 +132,6 @@ export const mealPlan = sqliteTable('meal_plan', {
 		.$defaultFn(() => new Date())
 });
 
-// Meal plan ↔ recipe join table
 export const mealPlanRecipe = sqliteTable('meal_plan_recipe', {
 	id: text('id')
 		.primaryKey()
@@ -162,12 +142,11 @@ export const mealPlanRecipe = sqliteTable('meal_plan_recipe', {
 	recipeId: text('recipe_id')
 		.notNull()
 		.references(() => recipe.id, { onDelete: 'cascade' }),
-	dayOfWeek: integer('day_of_week').notNull(), // 0=Mon, 1=Tue ... 6=Sun
+	dayOfWeek: integer('day_of_week').notNull(),
 	mealType: text('meal_type').notNull().default('dinner'),
 	sortOrder: integer('sort_order').notNull().default(0)
 });
 
-// Shopping lists
 export const shoppingList = sqliteTable('shopping_list', {
 	id: text('id')
 		.primaryKey()
@@ -186,7 +165,6 @@ export const shoppingList = sqliteTable('shopping_list', {
 		.$defaultFn(() => new Date())
 });
 
-// Shopping list items
 export const shoppingListItem = sqliteTable('shopping_list_item', {
 	id: text('id')
 		.primaryKey()
@@ -197,132 +175,7 @@ export const shoppingListItem = sqliteTable('shopping_list_item', {
 	ingredientName: text('ingredient_name').notNull(),
 	quantity: text('quantity').notNull(),
 	unit: text('unit'),
-	category: text('category').notNull().default('other'), // produce, dairy, meat, pantry, frozen, bakery, other
+	category: text('category').notNull().default('other'),
 	checked: integer('checked', { mode: 'boolean' }).notNull().default(false),
 	recipeId: text('recipe_id').references(() => recipe.id, { onDelete: 'set null' })
 });
-
-// ============== RELATIONS ==============
-
-// Relations
-export const chatSessionRelations = relations(chatSession, ({ many }) => ({
-	messages: many(message)
-}));
-
-export const messageRelations = relations(message, ({ one }) => ({
-	session: one(chatSession, {
-		fields: [message.sessionId],
-		references: [chatSession.id]
-	})
-}));
-
-export const agentRelations = relations(agent, ({ many }) => ({
-	runs: many(agentRun)
-}));
-
-export const agentRunRelations = relations(agentRun, ({ one }) => ({
-	agent: one(agent, {
-		fields: [agentRun.agentId],
-		references: [agent.id]
-	})
-}));
-
-export const recipeRelations = relations(recipe, ({ many }) => ({
-	mealPlanRecipes: many(mealPlanRecipe),
-	shoppingListItems: many(shoppingListItem)
-}));
-
-export const mealPlanRelations = relations(mealPlan, ({ many }) => ({
-	recipes: many(mealPlanRecipe),
-	shoppingLists: many(shoppingList)
-}));
-
-export const mealPlanRecipeRelations = relations(mealPlanRecipe, ({ one }) => ({
-	mealPlan: one(mealPlan, {
-		fields: [mealPlanRecipe.mealPlanId],
-		references: [mealPlan.id]
-	}),
-	recipe: one(recipe, {
-		fields: [mealPlanRecipe.recipeId],
-		references: [recipe.id]
-	})
-}));
-
-export const shoppingListRelations = relations(shoppingList, ({ one, many }) => ({
-	mealPlan: one(mealPlan, {
-		fields: [shoppingList.mealPlanId],
-		references: [mealPlan.id]
-	}),
-	items: many(shoppingListItem)
-}));
-
-export const shoppingListItemRelations = relations(shoppingListItem, ({ one }) => ({
-	shoppingList: one(shoppingList, {
-		fields: [shoppingListItem.shoppingListId],
-		references: [shoppingList.id]
-	}),
-	recipe: one(recipe, {
-		fields: [shoppingListItem.recipeId],
-		references: [recipe.id]
-	})
-}));
-
-// ============== DATABASE CLIENTS ==============
-
-// Main SQLite database (Drizzle)
-if (!env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
-const client = new Database(env.DATABASE_URL);
-
-export { client };
-export const db = drizzle(client, {
-	schema: {
-		task,
-		chatSession,
-		message,
-		agent,
-		agentRun,
-		modelsCache,
-		recipe,
-		mealPlan,
-		mealPlanRecipe,
-		shoppingList,
-		shoppingListItem,
-		chatSessionRelations,
-		messageRelations,
-		agentRelations,
-		agentRunRelations,
-		recipeRelations,
-		mealPlanRelations,
-		mealPlanRecipeRelations,
-		shoppingListRelations,
-		shoppingListItemRelations
-	}
-});
-
-// Vector database (sqlite-vec)
-if (!env.VECTOR_DB_URL) throw new Error('VECTOR_DB_URL is not set');
-const vectorClient = new Database(env.VECTOR_DB_URL);
-
-// Load sqlite-vec extension for vector search
-sqliteVec.load(vectorClient);
-
-// Initialize tables for memory chunks + vec0 virtual table for embeddings
-vectorClient.exec(`
-	CREATE TABLE IF NOT EXISTS memory_chunks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		session_id TEXT,
-		content TEXT NOT NULL,
-		type TEXT NOT NULL DEFAULT 'knowledge',
-		source TEXT NOT NULL DEFAULT '',
-		created_at INTEGER NOT NULL DEFAULT (unixepoch())
-	);
-`);
-
-vectorClient.exec(`
-	CREATE VIRTUAL TABLE IF NOT EXISTS memory_embeddings USING vec0(
-		chunk_id INTEGER PRIMARY KEY,
-		embedding float[1536] distance_metric=cosine
-	);
-`);
-
-export { vectorClient };

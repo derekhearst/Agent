@@ -168,7 +168,7 @@
 					<div class="relative z-10 flex flex-col items-center justify-center py-20 text-center">
 						<div class="mb-4 text-5xl">🤖</div>
 						<h3
-							class="mb-2 bg-gradient-to-r from-primary to-secondary bg-clip-text text-lg font-bold text-transparent"
+							class="mb-2 bg-linear-to-r from-primary to-secondary bg-clip-text text-lg font-bold text-transparent"
 						>
 							No agents yet
 						</h3>

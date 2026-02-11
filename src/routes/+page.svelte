@@ -2,6 +2,7 @@
 	import 'highlight.js/styles/github-dark.css';
 	import NavMenu from '$lib/components/NavMenu.svelte';
 	import GeometricPattern from '$lib/components/GeometricPattern.svelte';
+	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import SessionList from '$lib/sessions/SessionList.svelte';
 	import ChatMessage from '$lib/chat/ChatMessage.svelte';
 	import ChatInput from '$lib/chat/ChatInput.svelte';
@@ -35,6 +36,11 @@
 		durationMs?: number;
 		sources?: Array<{ title: string; url: string }>;
 		screenshots?: string[];
+		toolsUsed?: Array<{
+			tool: string;
+			args: Record<string, unknown>;
+			durationMs: number;
+		}>;
 	}
 
 	let sessions = $state<Session[]>([]);
@@ -43,13 +49,130 @@
 	let messages = $derived([...messagesData]);
 	let isStreaming = $state(false);
 	let streamingContent = $state('');
-	let currentModel = $state('openrouter/auto');
+	let currentModel = $state('moonshotai/kimi-k2.5');
 	let chatContainer: HTMLDivElement | undefined = $state();
 	let chatInputRef: ChatInput | undefined = $state();
 	let streamStartTime = 0;
-	let toolStatus = $state<{ tool: string; query: string } | null>(null);
+	let toolActivity = $state<
+		Array<{
+			tool: string;
+			args: Record<string, unknown>;
+			status: 'running' | 'done';
+			startedAt: number;
+			finishedAt?: number;
+		}>
+	>([]);
 	let searchedSources = $state<Array<{ title: string; url: string }>>([]);
 	let collectedScreenshots = $state<string[]>([]);
+
+	/** Generate a short human-readable summary of what tools are doing */
+	function getToolSummary(
+		activity: Array<{ tool: string; args: Record<string, unknown>; status: string }>
+	): string {
+		if (activity.length === 0) return '';
+
+		// Find the most significant/recent running tool, or the last one
+		const current =
+			activity.findLast((t) => t.status === 'running') || activity[activity.length - 1];
+		const tool = current.tool;
+		const args = current.args;
+
+		// Generate a short contextual summary
+		switch (tool) {
+			case 'search_email':
+			case 'list_emails':
+			case 'read_email': {
+				const readCount = activity.filter((t) => t.tool === 'read_email').length;
+				const q = (activity.find((t) => t.tool === 'search_email')?.args?.query as string) || '';
+				if (readCount > 0)
+					return `Analyzing ${readCount} email${readCount > 1 ? 's' : ''}${q ? ` — ${q}` : ''}`;
+				if (q) return `Searching emails: ${q}`;
+				return 'Reading emails';
+			}
+			case 'list_calendar_events':
+			case 'check_availability':
+				return 'Checking calendar';
+			case 'search_web':
+				return `Searching the web${args.query ? `: ${args.query}` : ''}`;
+			case 'recall_memory':
+			case 'save_memory':
+			case 'create_note':
+			case 'read_note':
+			case 'list_notes':
+				return 'Accessing memory';
+			case 'get_finances':
+				return 'Checking finances';
+			case 'browse_url':
+			case 'browser_act':
+			case 'browser_extract':
+			case 'browser_screenshot':
+				return 'Browsing the web';
+			case 'ask_agent':
+				return `Consulting agent: ${args.agent_name || ''}`;
+			default:
+				return `Using ${tool}`;
+		}
+	}
+
+	function getToolLabel(
+		tool: string,
+		args: Record<string, unknown>
+	): { icon: string; text: string } {
+		const q = (args.query as string) || '';
+		const short = (s: string, max = 40) => (s.length > max ? s.slice(0, max) + '…' : s);
+
+		switch (tool) {
+			case 'search_email':
+				return { icon: '📧', text: `Searching email${q ? `: "${short(q)}"` : ''}` };
+			case 'read_email':
+				return { icon: '📧', text: `Reading email ${args.message_id || ''}` };
+			case 'list_emails':
+				return {
+					icon: '📧',
+					text: `Listing ${args.label || 'INBOX'} emails${args.unread_only ? ' (unread)' : ''}`
+				};
+			case 'list_calendar_events':
+				return {
+					icon: '📅',
+					text: `Checking calendar (next ${args.days_ahead || 7} days)`
+				};
+			case 'check_availability':
+				return { icon: '📅', text: `Checking availability for ${args.date || ''}` };
+			case 'search_web':
+				return { icon: '🔍', text: `Searching web${q ? `: "${short(q)}"` : ''}` };
+			case 'recall_memory':
+				return { icon: '🧠', text: `Searching memory${q ? `: "${short(q)}"` : ''}` };
+			case 'save_memory':
+				return { icon: '💾', text: 'Saving to memory' };
+			case 'create_note':
+				return { icon: '📝', text: `Writing note: ${args.path || ''}` };
+			case 'read_note':
+				return { icon: '📖', text: `Reading note: ${args.path || ''}` };
+			case 'list_notes':
+				return { icon: '📂', text: 'Browsing notes' };
+			case 'get_finances':
+				return { icon: '💰', text: `Checking finances${args.month ? ` (${args.month})` : ''}` };
+			case 'browse_url':
+				return { icon: '🌐', text: `Browsing: ${short((args.url as string) || '')}` };
+			case 'browser_act':
+				return {
+					icon: '🖱️',
+					text: `${args.action || 'Acting'}${args.target ? `: "${short(args.target as string)}"` : ''}`
+				};
+			case 'browser_extract':
+				return { icon: '📋', text: 'Extracting page content' };
+			case 'browser_screenshot':
+				return { icon: '📸', text: 'Taking screenshot' };
+			case 'browser_close':
+				return { icon: '❌', text: 'Closing browser' };
+			case 'ask_agent':
+				return { icon: '🤖', text: `Asking agent: ${args.agent_name || ''}` };
+			case 'list_agents':
+				return { icon: '🤖', text: 'Listing agents' };
+			default:
+				return { icon: '⚙️', text: `${tool}${q ? `: "${short(q)}"` : ''}` };
+		}
+	}
 
 	// Load sessions on mount
 	$effect(() => {
@@ -93,9 +216,26 @@
 	}
 
 	async function createSession() {
+		// Optimistic update - create a temporary session immediately
+		const tempId = `temp-${Date.now()}`;
+		const tempSession: Session = {
+			id: tempId,
+			title: 'New Chat',
+			messageCount: 0,
+			model: currentModel,
+			createdAt: new Date(),
+			updatedAt: new Date()
+		};
+		sessions = [tempSession, ...sessions];
+		activeSessionId = tempId;
+		messagesData = [];
+
+		// Create the real session in the background
 		const session = await createSessionRemote({ model: currentModel });
-		sessions = [session, ...sessions];
-		await selectSession(session.id);
+
+		// Replace temp session with real one
+		sessions = sessions.map((s) => (s.id === tempId ? session : s));
+		activeSessionId = session.id;
 	}
 
 	async function deleteSession(id: string) {
@@ -112,7 +252,9 @@
 	}
 
 	async function handleModelChange(model: string) {
+		console.log('handleModelChange called with:', model);
 		currentModel = model;
+		console.log('currentModel set to:', currentModel);
 		if (activeSessionId) {
 			await updateSessionRemote({ id: activeSessionId, model });
 			// Update local session
@@ -148,15 +290,28 @@
 					}
 
 					if (parsed.tool_status === 'searching') {
-						toolStatus = {
-							tool: parsed.tool,
-							query: parsed.args?.query || parsed.args?.url || parsed.args?.action || ''
-						};
+						toolActivity = [
+							...toolActivity,
+							{
+								tool: parsed.tool,
+								args: parsed.args || {},
+								status: 'running',
+								startedAt: Date.now()
+							}
+						];
 						continue;
 					}
 
 					if (parsed.tool_status === 'complete') {
-						toolStatus = null;
+						// Mark the last running instance of this tool as done
+						const idx = toolActivity.findLastIndex(
+							(t) => t.tool === parsed.tool && t.status === 'running'
+						);
+						if (idx !== -1) {
+							toolActivity[idx].status = 'done';
+							toolActivity[idx].finishedAt = Date.now();
+							toolActivity = [...toolActivity];
+						}
 						if (parsed.sources && Array.isArray(parsed.sources)) {
 							searchedSources = [...searchedSources, ...parsed.sources];
 						}
@@ -167,7 +322,6 @@
 					}
 
 					if (parsed.content) {
-						toolStatus = null;
 						streamingContent += parsed.content;
 					}
 
@@ -182,7 +336,15 @@
 							createdAt: new Date().toISOString(),
 							durationMs,
 							sources: searchedSources.length > 0 ? [...searchedSources] : undefined,
-							screenshots: collectedScreenshots.length > 0 ? [...collectedScreenshots] : undefined
+							screenshots: collectedScreenshots.length > 0 ? [...collectedScreenshots] : undefined,
+							toolsUsed:
+								toolActivity.length > 0
+									? toolActivity.map((t) => ({
+											tool: t.tool,
+											args: t.args,
+											durationMs: (t.finishedAt || Date.now()) - t.startedAt
+										}))
+									: undefined
 						};
 						messagesData = [...messagesData, assistantMsg];
 						streamingContent = '';
@@ -256,7 +418,7 @@
 		messagesData = [...messagesData, userMsg];
 		isStreaming = true;
 		streamingContent = '';
-		toolStatus = null;
+		toolActivity = [];
 		searchedSources = [];
 		collectedScreenshots = [];
 		streamStartTime = Date.now();
@@ -291,7 +453,7 @@
 		} finally {
 			isStreaming = false;
 			streamingContent = '';
-			toolStatus = null;
+			toolActivity = [];
 		}
 	}
 
@@ -317,19 +479,21 @@
 		const lastUserMsg = messages.slice(0, lastAssistantIdx).findLast((m) => m.role === 'user');
 		if (!lastUserMsg) return;
 
-		// Delete the assistant message from DB
-		await deleteMessageAndAfter({ sessionId: activeSessionId, messageId: lastAssistant.id });
-
-		// Remove from local state
-		messagesData = messagesData.filter((m) => m.id !== lastAssistant.id);
-
-		// Re-send the last user's content through the stream (without saving user msg again)
+		// Set streaming state FIRST for immediate UI feedback
 		isStreaming = true;
 		streamingContent = '';
-		toolStatus = null;
+		toolActivity = [];
 		searchedSources = [];
 		collectedScreenshots = [];
 		streamStartTime = Date.now();
+
+		// Remove from local state immediately for snappy UI
+		messagesData = messagesData.filter((m) => m.id !== lastAssistant.id);
+
+		// Delete from DB in background (don't await)
+		deleteMessageAndAfter({ sessionId: activeSessionId, messageId: lastAssistant.id }).catch(
+			(err) => console.error('Failed to delete message:', err)
+		);
 
 		try {
 			const res = await fetch('/api/chat/regenerate', {
@@ -359,7 +523,7 @@
 		} finally {
 			isStreaming = false;
 			streamingContent = '';
-			toolStatus = null;
+			toolActivity = [];
 		}
 	}
 
@@ -403,7 +567,7 @@
 		/>
 
 		<!-- Header -->
-		<div class="relative z-10 flex items-center justify-between border-b border-base-300 px-4 py-3">
+		<div class="relative z-20 flex items-center justify-between border-b border-base-300 px-4 py-3">
 			<div>
 				<h1 class="text-lg font-semibold">
 					{#if activeSessionId}
@@ -427,7 +591,7 @@
 						<div class="relative z-10 text-center">
 							<div class="mb-4 text-6xl">🤖</div>
 							<h2
-								class="mb-2 bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-2xl font-bold text-transparent"
+								class="mb-2 bg-linear-to-r from-primary via-secondary to-accent bg-clip-text text-2xl font-bold text-transparent"
 							>
 								How can I help you?
 							</h2>
@@ -452,39 +616,136 @@
 								model={msg.model}
 								sources={msg.sources}
 								screenshots={msg.screenshots}
+								toolsUsed={msg.toolsUsed}
 								onRegenerate={isLastAssistant && !isStreaming ? regenerateLastResponse : undefined}
 								onEdit={isLastUser && !isStreaming ? editLastUserMessage : undefined}
 							/>
 						{/each}
 
-						{#if isStreaming && toolStatus}
+						{#if isStreaming}
+							{@const summary = getToolSummary(toolActivity)}
+							{@const runningCount = toolActivity.filter((t) => t.status === 'running').length}
 							<div class="chat-start chat">
-								<div class="chat-bubble flex items-center gap-2 bg-base-300 text-base-content">
-									<span class="loading loading-sm loading-spinner"></span>
-									<span class="text-sm">
-										{#if toolStatus.tool.startsWith('browse') || toolStatus.tool.startsWith('browser')}
-											🌐 Browsing{toolStatus.query ? ` "${toolStatus.query}"` : ''}...
-										{:else}
-											🔍 Searching the web{toolStatus.query ? ` for "${toolStatus.query}"` : ''}...
-										{/if}
-									</span>
+								<div class="chat-header mb-1 flex items-center gap-2 text-xs opacity-50">
+									<span>DrokBot</span>
+									{#if toolActivity.length > 0}
+										<div class="dropdown dropdown-bottom">
+											<button
+												type="button"
+												class="flex cursor-pointer items-center gap-1.5 rounded-full bg-base-200/50 px-2 py-0.5 select-none hover:bg-base-200"
+											>
+												{#if runningCount > 0}
+													<span class="loading loading-xs loading-spinner text-warning"></span>
+												{:else}
+													<svg class="h-3 w-3 text-warning" viewBox="0 0 24 24" fill="currentColor">
+														<path
+															d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
+														/>
+													</svg>
+												{/if}
+												<span class="font-medium text-base-content/70"
+													>{summary ||
+														`${toolActivity.length} tool${toolActivity.length > 1 ? 's' : ''}`}</span
+												>
+												<svg
+													class="h-3 w-3 text-base-content/40"
+													viewBox="0 0 20 20"
+													fill="currentColor"
+												>
+													<path
+														fill-rule="evenodd"
+														d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+														clip-rule="evenodd"
+													/>
+												</svg>
+											</button>
+											<div
+												class="dropdown-content z-50 mt-1 max-w-md min-w-max rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-xl"
+											>
+												{#each toolActivity as entry, i (i)}
+													{@const label = getToolLabel(entry.tool, entry.args)}
+													{@const elapsed = entry.finishedAt
+														? ((entry.finishedAt - entry.startedAt) / 1000).toFixed(1)
+														: ((Date.now() - entry.startedAt) / 1000).toFixed(0)}
+													<div
+														class="flex items-center gap-2 rounded px-2 py-0.5 text-xs hover:bg-base-200"
+													>
+														{#if entry.status === 'running'}
+															<span class="loading loading-xs loading-spinner text-primary"></span>
+														{:else}
+															<span class="text-xs text-success">✓</span>
+														{/if}
+														<span class="text-sm">{label.icon}</span>
+														<span
+															class="flex-1 text-base-content"
+															class:opacity-60={entry.status === 'done'}>{label.text}</span
+														>
+														<span class="text-base-content/50">{elapsed}s</span>
+													</div>
+												{/each}
+											</div>
+										</div>
+									{/if}
 								</div>
-							</div>
-						{/if}
-
-						{#if isStreaming && streamingContent}
-							<ChatMessage
-								role="assistant"
-								content={streamingContent}
-								sources={searchedSources.length > 0 ? searchedSources : undefined}
-								screenshots={collectedScreenshots.length > 0 ? collectedScreenshots : undefined}
-							/>
-						{/if}
-
-						{#if isStreaming && !streamingContent && !toolStatus}
-							<div class="chat-start chat">
-								<div class="chat-bubble bg-base-300 text-base-content">
-									<span class="loading loading-sm loading-dots"></span>
+								<div class="chat-bubble max-w-[85%] bg-base-300 text-base-content">
+									{#if streamingContent}
+										{#if searchedSources.length > 0}
+											<details class="mb-2">
+												<summary
+													class="cursor-pointer text-xs font-semibold opacity-60 select-none"
+												>
+													🌐 Searched {searchedSources.length} site{searchedSources.length > 1
+														? 's'
+														: ''}
+												</summary>
+												<ul class="mt-1 flex flex-col gap-0.5">
+													{#each searchedSources as source (source.url)}
+														<li class="truncate text-xs">
+															<a
+																href={source.url}
+																target="_blank"
+																rel="noopener noreferrer"
+																class="link text-primary link-hover"
+															>
+																{source.title || new URL(source.url).hostname}
+															</a>
+														</li>
+													{/each}
+												</ul>
+											</details>
+										{/if}
+										{#if collectedScreenshots.length > 0}
+											<details class="mb-2">
+												<summary
+													class="cursor-pointer text-xs font-semibold opacity-60 select-none"
+												>
+													📸 {collectedScreenshots.length} screenshot{collectedScreenshots.length >
+													1
+														? 's'
+														: ''} captured
+												</summary>
+												<div class="mt-2 flex flex-col gap-2">
+													{#each collectedScreenshots as src, i (src)}
+														<a href={src} target="_blank" rel="noopener noreferrer" class="block">
+															<img
+																{src}
+																alt="Browser screenshot {i + 1}"
+																class="max-h-64 rounded border border-base-content/10 object-contain"
+															/>
+														</a>
+													{/each}
+												</div>
+											</details>
+										{/if}
+										<MarkdownRenderer content={streamingContent} />
+									{:else if toolActivity.length > 0 && runningCount > 0}
+										<div class="flex items-center gap-2 text-sm opacity-60">
+											<span class="loading loading-sm loading-dots"></span>
+											<span>Working...</span>
+										</div>
+									{:else}
+										<span class="loading loading-sm loading-dots"></span>
+									{/if}
 								</div>
 							</div>
 						{/if}
@@ -500,7 +761,7 @@
 	</div>
 
 	<!-- Right Sidebar - Sessions -->
-	<div class="w-64 shrink-0 border-l border-base-300">
+	<div class="w-64 shrink-0 overflow-hidden border-l border-base-300">
 		<SessionList
 			{sessions}
 			{activeSessionId}

@@ -77,7 +77,7 @@ const createAgentSchema = z.object({
 	description: z.string().optional().default(''),
 	systemPrompt: z.string().min(1),
 	cronSchedule: z.string().min(1),
-	model: z.string().optional().default('openrouter/auto'),
+	model: z.string().optional().default('moonshotai/kimi-k2.5'),
 	enabled: z.boolean().optional().default(true)
 });
 
@@ -196,7 +196,7 @@ You MUST respond with ONLY a valid JSON object (no markdown code fences, no expl
   "systemPrompt": "The full system prompt for the agent. Be detailed and specific. Include: what the agent should do each run, what tools to use, how to organize findings, what to save to memory. Write this as instructions TO the agent.",
   "cronSchedule": "A valid cron expression (e.g. '0 9 * * *' for daily at 9am, '*/30 * * * *' for every 30 min)",
   "cronHuman": "Human-readable description of the schedule (e.g. 'Every day at 9:00 AM', 'Every 30 minutes')",
-  "model": "openrouter/auto"
+  "model": "moonshotai/kimi-k2.5"
 }
 
 Guidelines for the systemPrompt field:
@@ -220,7 +220,7 @@ Guidelines for cronSchedule:
 
 const generateConfigSchema = z.object({
 	description: z.string().min(1),
-	model: z.string().optional().default('openrouter/auto')
+	model: z.string().optional().default('moonshotai/kimi-k2.5')
 });
 
 export const generateAgentConfig = command(generateConfigSchema, async ({ description, model }) => {
