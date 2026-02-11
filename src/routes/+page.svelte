@@ -1,6 +1,7 @@
 <script lang="ts">
 	import 'highlight.js/styles/github-dark.css';
 	import NavMenu from '$lib/components/NavMenu.svelte';
+	import GeometricPattern from '$lib/components/GeometricPattern.svelte';
 	import SessionList from '$lib/sessions/SessionList.svelte';
 	import ChatMessage from '$lib/chat/ChatMessage.svelte';
 	import ChatInput from '$lib/chat/ChatInput.svelte';
@@ -394,9 +395,15 @@
 	</div>
 
 	<!-- Center Chat -->
-	<div class="flex min-w-0 flex-1 flex-col">
+	<div class="relative flex min-w-0 flex-1 flex-col">
+		<!-- Background Pattern - covers entire chat area -->
+		<GeometricPattern
+			variant="hexagons"
+			opacity={messages.length === 0 && !isStreaming ? 0.04 : 0.02}
+		/>
+
 		<!-- Header -->
-		<div class="flex items-center justify-between border-b border-base-300 px-4 py-3">
+		<div class="relative z-10 flex items-center justify-between border-b border-base-300 px-4 py-3">
 			<div>
 				<h1 class="text-lg font-semibold">
 					{#if activeSessionId}
@@ -413,14 +420,18 @@
 		</div>
 
 		<!-- Messages -->
-		<div class="flex-1 overflow-y-auto px-4 py-4" bind:this={chatContainer}>
+		<div class="relative z-10 flex-1 overflow-y-auto px-4 py-4" bind:this={chatContainer}>
 			<div class="mx-auto max-w-3xl">
 				{#if messages.length === 0 && !isStreaming}
 					<div class="flex h-full items-center justify-center pt-32">
-						<div class="text-center">
-							<div class="mb-4 text-6xl opacity-20">🤖</div>
-							<h2 class="mb-2 text-xl font-semibold opacity-60">How can I help you?</h2>
-							<p class="text-sm opacity-40">Send a message to start a conversation</p>
+						<div class="relative z-10 text-center">
+							<div class="mb-4 text-6xl">🤖</div>
+							<h2
+								class="mb-2 bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-2xl font-bold text-transparent"
+							>
+								How can I help you?
+							</h2>
+							<p class="text-sm opacity-50">Send a message to start a conversation</p>
 						</div>
 					</div>
 				{:else}
@@ -483,7 +494,7 @@
 		</div>
 
 		<!-- Input -->
-		<div class="mx-auto w-full max-w-3xl">
+		<div class="relative z-10 mx-auto w-full max-w-3xl">
 			<ChatInput disabled={isStreaming} onSend={sendMessage} bind:this={chatInputRef} />
 		</div>
 	</div>

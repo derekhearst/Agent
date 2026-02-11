@@ -5,7 +5,7 @@ import { db, vectorClient, message } from '$lib/shared/db';
 import { eq } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { dev } from '$app/environment';
-import { mkdir, readdir, rm } from 'node:fs/promises';
+import { mkdir, readdir, rm, readFile, writeFile, access } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
 
 // ============== TYPES ==============
@@ -50,15 +50,18 @@ const MEMORY_DIR = getMemoryDir();
 
 /** Ensure the memory directory and a default profile.md exist */
 async function ensureMemoryDir(): Promise<void> {
-	const memoryDirFile = Bun.file(join(MEMORY_DIR, '.keep'));
-	if (!(await memoryDirFile.exists())) {
+	const keepPath = join(MEMORY_DIR, '.keep');
+	try {
+		await access(keepPath);
+	} catch {
 		await mkdir(MEMORY_DIR, { recursive: true });
 	}
 
 	const profilePath = join(MEMORY_DIR, 'profile.md');
-	const profileFile = Bun.file(profilePath);
-	if (!(await profileFile.exists())) {
-		await Bun.write(
+	try {
+		await access(profilePath);
+	} catch {
+		await writeFile(
 			profilePath,
 			`# User Profile
 
@@ -80,11 +83,11 @@ async function ensureMemoryDir(): Promise<void> {
 /** Read a memory file by relative path */
 export const readMemoryFile = query(z.string(), async (relativePath) => {
 	const fullPath = join(MEMORY_DIR, relativePath);
-	const file = Bun.file(fullPath);
-	if (!(await file.exists())) {
+	try {
+		return await readFile(fullPath, 'utf-8');
+	} catch {
 		throw new Error(`File not found: ${relativePath}`);
 	}
-	return await file.text();
 });
 
 const writeMemoryFileSchema = z.object({
@@ -96,11 +99,12 @@ const writeMemoryFileSchema = z.object({
 export const writeMemoryFile = command(writeMemoryFileSchema, async ({ path, content }) => {
 	const fullPath = join(MEMORY_DIR, path);
 	const dir = dirname(fullPath);
-	const dirFile = Bun.file(join(dir, '.keep'));
-	if (!(await dirFile.exists())) {
+	try {
+		await access(dir);
+	} catch {
 		await mkdir(dir, { recursive: true });
 	}
-	await Bun.write(fullPath, content);
+	await writeFile(fullPath, content, 'utf-8');
 	return { success: true };
 });
 
@@ -159,9 +163,7 @@ export const getProfileMemory = query(async () => {
 	try {
 		await ensureMemoryDir();
 		const fullPath = join(MEMORY_DIR, 'profile.md');
-		const file = Bun.file(fullPath);
-		if (!(await file.exists())) return null;
-		return await file.text();
+		return await readFile(fullPath, 'utf-8');
 	} catch {
 		return null;
 	}

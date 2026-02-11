@@ -43,22 +43,25 @@
 </script>
 
 <form
-	class="flex items-end gap-2 border-t border-base-300 bg-base-100 p-4"
+	class="relative flex items-end gap-2 border-t border-base-300 bg-base-100 p-4"
 	onsubmit={(e) => {
 		e.preventDefault();
 		handleSubmit();
 	}}
 >
-	<textarea
-		bind:this={textarea}
-		bind:value={input}
-		onkeydown={handleKeydown}
-		oninput={autoResize}
-		{disabled}
-		placeholder="Message DrokBot..."
-		rows="1"
-		class="textarea-bordered textarea flex-1 resize-none text-sm leading-relaxed"
-	></textarea>
+	<!-- Rainbow gradient border wrapper -->
+	<div class="rainbow-border relative flex-1">
+		<textarea
+			bind:this={textarea}
+			bind:value={input}
+			onkeydown={handleKeydown}
+			oninput={autoResize}
+			{disabled}
+			placeholder="Message DrokBot..."
+			rows="1"
+			class="w-full resize-none rounded-lg border-0 bg-base-200 px-4 py-3 text-sm leading-relaxed outline-none focus:ring-0"
+		></textarea>
+	</div>
 	<button
 		type="submit"
 		class="btn btn-sm btn-primary"
@@ -72,3 +75,41 @@
 		</svg>
 	</button>
 </form>
+
+<style>
+	.rainbow-border {
+		--rainbow-gradient: linear-gradient(
+			90deg,
+			#ff6b6b,
+			#feca57,
+			#48dbfb,
+			#ff9ff3,
+			#54a0ff,
+			#5f27cd,
+			#ff6b6b
+		);
+		background: var(--rainbow-gradient);
+		background-size: 200% 100%;
+		animation: rainbow-shift 4s linear infinite;
+		padding: 2px;
+		border-radius: 0.625rem;
+	}
+
+	.rainbow-border textarea {
+		border-radius: 0.5rem;
+	}
+
+	.rainbow-border:focus-within {
+		animation: rainbow-shift 2s linear infinite;
+		box-shadow: 0 0 20px rgba(84, 160, 255, 0.3);
+	}
+
+	@keyframes rainbow-shift {
+		0% {
+			background-position: 0% 50%;
+		}
+		100% {
+			background-position: 200% 50%;
+		}
+	}
+</style>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import NavMenu from '$lib/components/NavMenu.svelte';
+	import GeometricPattern from '$lib/components/GeometricPattern.svelte';
 	import MemoryFileTree from '$lib/memory/MemoryFileTree.svelte';
 	import MemoryEditor from '$lib/memory/MemoryEditor.svelte';
 	import VectorSearch from '$lib/memory/VectorSearch.svelte';
@@ -192,7 +193,7 @@
 		</div>
 
 		<!-- Tab content -->
-		<div class="flex-1 overflow-hidden">
+		<div class="relative flex-1 overflow-hidden">
 			{#if activeTab === 'notes'}
 				{#if selectedFile}
 					<MemoryEditor
@@ -203,11 +204,16 @@
 						onDelete={deleteCurrentFile}
 					/>
 				{:else}
-					<div class="flex h-full items-center justify-center">
+					<GeometricPattern variant="dots" opacity={0.06} />
+					<div class="relative z-10 flex h-full items-center justify-center">
 						<div class="text-center">
-							<div class="mb-4 text-6xl opacity-20">📝</div>
-							<h2 class="mb-2 text-xl font-semibold opacity-60">Memory Notes</h2>
-							<p class="mb-4 text-sm opacity-40">
+							<div class="mb-4 text-6xl">📝</div>
+							<h2
+								class="mb-2 bg-gradient-to-r from-secondary to-accent bg-clip-text text-xl font-bold text-transparent"
+							>
+								Memory Notes
+							</h2>
+							<p class="mb-4 text-sm opacity-50">
 								Select a file from the sidebar or create a new one
 							</p>
 							<button class="btn btn-sm btn-primary" onclick={createFile}> Create Note </button>

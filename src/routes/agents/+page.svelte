@@ -1,5 +1,6 @@
 <script lang="ts">
 	import NavMenu from '$lib/components/NavMenu.svelte';
+	import GeometricPattern from '$lib/components/GeometricPattern.svelte';
 	import AgentCard from '$lib/agents/AgentCard.svelte';
 	import AgentDetail from '$lib/agents/AgentDetail.svelte';
 	import AgentSetupModal from '$lib/agents/AgentSetupModal.svelte';
@@ -157,16 +158,21 @@
 			</div>
 
 			<!-- Agent grid -->
-			<div class="flex-1 overflow-y-auto p-4">
+			<div class="relative flex-1 overflow-y-auto p-4">
 				{#if isLoading}
 					<div class="flex items-center justify-center py-20">
 						<span class="loading loading-lg loading-spinner"></span>
 					</div>
 				{:else if agents.length === 0}
-					<div class="flex flex-col items-center justify-center py-20 text-center">
-						<div class="mb-4 text-5xl opacity-20">🤖</div>
-						<h3 class="text-lg font-semibold opacity-60">No agents yet</h3>
-						<p class="mb-6 text-sm opacity-40">
+					<GeometricPattern variant="grid" opacity={0.05} />
+					<div class="relative z-10 flex flex-col items-center justify-center py-20 text-center">
+						<div class="mb-4 text-5xl">🤖</div>
+						<h3
+							class="mb-2 bg-gradient-to-r from-primary to-secondary bg-clip-text text-lg font-bold text-transparent"
+						>
+							No agents yet
+						</h3>
+						<p class="mb-6 text-sm opacity-50">
 							Create your first scheduled AI agent to automate tasks.
 						</p>
 						<button class="btn btn-primary" onclick={() => (setupOpen = true)}>

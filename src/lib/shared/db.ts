@@ -1,6 +1,6 @@
 // Shared database setup — Drizzle ORM + sqlite-vec for vector storage
-import { drizzle } from 'drizzle-orm/bun-sqlite';
-import { Database } from 'bun:sqlite';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
@@ -124,7 +124,7 @@ export const agentRunRelations = relations(agentRun, ({ one }) => ({
 
 // Main SQLite database (Drizzle)
 if (!env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
-const client = new Database(env.DATABASE_URL, { create: true });
+const client = new Database(env.DATABASE_URL);
 
 export { client };
 export const db = drizzle(client, {
@@ -144,13 +144,13 @@ export const db = drizzle(client, {
 
 // Vector database (sqlite-vec)
 if (!env.VECTOR_DB_URL) throw new Error('VECTOR_DB_URL is not set');
-const vectorClient = new Database(env.VECTOR_DB_URL, { create: true });
+const vectorClient = new Database(env.VECTOR_DB_URL);
 
 // Load sqlite-vec extension for vector search
-vectorClient.loadExtension(sqliteVec.getLoadablePath());
+sqliteVec.load(vectorClient);
 
 // Initialize tables for memory chunks + vec0 virtual table for embeddings
-vectorClient.run(`
+vectorClient.exec(`
 	CREATE TABLE IF NOT EXISTS memory_chunks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		session_id TEXT,
@@ -161,7 +161,7 @@ vectorClient.run(`
 	);
 `);
 
-vectorClient.run(`
+vectorClient.exec(`
 	CREATE VIRTUAL TABLE IF NOT EXISTS memory_embeddings USING vec0(
 		chunk_id INTEGER PRIMARY KEY,
 		embedding float[1536] distance_metric=cosine
