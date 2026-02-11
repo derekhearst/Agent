@@ -1,9 +1,17 @@
 <script lang="ts">
 	import NavMenu from '$lib/components/NavMenu.svelte';
-	import MemoryFileTree from '$lib/components/MemoryFileTree.svelte';
-	import MemoryEditor from '$lib/components/MemoryEditor.svelte';
-	import VectorSearch from '$lib/components/VectorSearch.svelte';
-	import VectorUpload from '$lib/components/VectorUpload.svelte';
+	import MemoryFileTree from '$lib/memory/MemoryFileTree.svelte';
+	import MemoryEditor from '$lib/memory/MemoryEditor.svelte';
+	import VectorSearch from '$lib/memory/VectorSearch.svelte';
+	import VectorUpload from '$lib/memory/VectorUpload.svelte';
+	import {
+		getFileTree,
+		getFileContent,
+		createFile as createFileRemote,
+		updateFile as updateFileRemote,
+		deleteFile as deleteFileRemote,
+		getVectorStats
+	} from '$lib/memory/memory.remote';
 
 	interface FileNode {
 		name: string;
@@ -35,8 +43,7 @@
 
 	async function loadFileTree() {
 		try {
-			const res = await fetch('/api/memory/files');
-			fileTree = await res.json();
+			fileTree = await getFileTree();
 		} catch (error) {
 			console.error('Failed to load file tree:', error);
 		}
@@ -44,8 +51,7 @@
 
 	async function loadStats() {
 		try {
-			const res = await fetch('/api/memory/stats');
-			stats = await res.json();
+			stats = await getVectorStats();
 		} catch (error) {
 			console.error('Failed to load stats:', error);
 		}
@@ -61,12 +67,9 @@
 		activeTab = 'notes';
 
 		try {
-			const res = await fetch(`/api/memory/files/${encodeURIComponent(path)}`);
-			if (res.ok) {
-				const content = await res.text();
-				fileContent = content;
-				originalContent = content;
-			}
+			const content = await getFileContent(path);
+			fileContent = content;
+			originalContent = content;
 		} catch (error) {
 			console.error('Failed to load file:', error);
 		}
@@ -76,11 +79,7 @@
 		if (!selectedFile) return;
 
 		try {
-			await fetch(`/api/memory/files/${encodeURIComponent(selectedFile)}`, {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ content })
-			});
+			await updateFileRemote({ path: selectedFile, content });
 			originalContent = content;
 		} catch (error) {
 			console.error('Failed to save file:', error);
@@ -94,13 +93,9 @@
 		const normalizedPath = path.endsWith('.md') ? path : `${path}.md`;
 
 		try {
-			await fetch('/api/memory/files', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					path: normalizedPath,
-					content: `# ${normalizedPath.split('/').pop()?.replace('.md', '') || 'New Note'}\n\n`
-				})
+			await createFileRemote({
+				path: normalizedPath,
+				content: `# ${normalizedPath.split('/').pop()?.replace('.md', '') || 'New Note'}\n\n`
 			});
 			await loadFileTree();
 			await selectFile(normalizedPath);
@@ -113,16 +108,11 @@
 		const path = prompt('Enter folder path (e.g., programming, food/recipes):');
 		if (!path) return;
 
-		// Create folder by creating a placeholder file, then we can delete it
-		// Or we just create the dir via a file
+		// Create folder by creating a placeholder file
 		const placeholderPath = `${path}/.gitkeep`;
 
 		try {
-			await fetch('/api/memory/files', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ path: placeholderPath, content: '' })
-			});
+			await createFileRemote({ path: placeholderPath, content: '' });
 			await loadFileTree();
 		} catch (error) {
 			console.error('Failed to create folder:', error);
@@ -134,9 +124,7 @@
 		if (!confirmed) return;
 
 		try {
-			await fetch(`/api/memory/files/${encodeURIComponent(path)}`, {
-				method: 'DELETE'
-			});
+			await deleteFileRemote(path);
 
 			if (selectedFile === path) {
 				selectedFile = null;

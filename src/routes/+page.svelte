@@ -1,18 +1,27 @@
 <script lang="ts">
 	import 'highlight.js/styles/github-dark.css';
 	import NavMenu from '$lib/components/NavMenu.svelte';
-	import SessionList from '$lib/components/SessionList.svelte';
-	import ChatMessage from '$lib/components/ChatMessage.svelte';
-	import ChatInput from '$lib/components/ChatInput.svelte';
-	import ModelSelector from '$lib/components/ModelSelector.svelte';
+	import SessionList from '$lib/sessions/SessionList.svelte';
+	import ChatMessage from '$lib/chat/ChatMessage.svelte';
+	import ChatInput from '$lib/chat/ChatInput.svelte';
+	import ModelSelector from '$lib/models/ModelSelector.svelte';
+	import {
+		getSessions,
+		getSessionMessages,
+		createSession as createSessionRemote,
+		updateSession as updateSessionRemote,
+		deleteSession as deleteSessionRemote,
+		deleteMessageAndAfter
+	} from '$lib/sessions/sessions.remote';
+	import { extractMemories } from '$lib/memory/memory.remote';
 
 	interface Session {
 		id: string;
 		title: string;
 		messageCount: number;
 		model: string;
-		createdAt: string;
-		updatedAt: string;
+		createdAt: Date;
+		updatedAt: Date;
 	}
 
 	interface Message {
@@ -20,15 +29,17 @@
 		sessionId: string;
 		role: 'user' | 'assistant' | 'system';
 		content: string;
-		model?: string;
+		model?: string | null;
 		createdAt: string;
 		durationMs?: number;
 		sources?: Array<{ title: string; url: string }>;
+		screenshots?: string[];
 	}
 
 	let sessions = $state<Session[]>([]);
 	let activeSessionId = $state<string | null>(null);
-	let messages = $state<Message[]>([]);
+	let messagesData = $state<Message[]>([]);
+	let messages = $derived([...messagesData]);
 	let isStreaming = $state(false);
 	let streamingContent = $state('');
 	let currentModel = $state('openrouter/auto');
@@ -37,6 +48,7 @@
 	let streamStartTime = 0;
 	let toolStatus = $state<{ tool: string; query: string } | null>(null);
 	let searchedSources = $state<Array<{ title: string; url: string }>>([]);
+	let collectedScreenshots = $state<string[]>([]);
 
 	// Load sessions on mount
 	$effect(() => {
@@ -52,8 +64,7 @@
 	});
 
 	async function loadSessions() {
-		const res = await fetch('/api/sessions');
-		sessions = await res.json();
+		sessions = await getSessions();
 		// If we have sessions but none selected, select the first one
 		if (sessions.length > 0 && !activeSessionId) {
 			await selectSession(sessions[0].id);
@@ -66,8 +77,12 @@
 		isStreaming = false;
 
 		// Load messages for this session
-		const res = await fetch(`/api/sessions/${id}/messages`);
-		messages = await res.json();
+		const rawMessages = await getSessionMessages(id);
+		messagesData = rawMessages.map((m) => ({
+			...m,
+			role: m.role as 'user' | 'assistant' | 'system',
+			createdAt: new Date(m.createdAt).toISOString()
+		}));
 
 		// Set model from session
 		const session = sessions.find((s) => s.id === id);
@@ -77,23 +92,18 @@
 	}
 
 	async function createSession() {
-		const res = await fetch('/api/sessions', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ model: currentModel })
-		});
-		const session = await res.json();
+		const session = await createSessionRemote({ model: currentModel });
 		sessions = [session, ...sessions];
 		await selectSession(session.id);
 	}
 
 	async function deleteSession(id: string) {
-		await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+		await deleteSessionRemote(id);
 		sessions = sessions.filter((s) => s.id !== id);
 
 		if (activeSessionId === id) {
 			activeSessionId = null;
-			messages = [];
+			messagesData = [];
 			if (sessions.length > 0) {
 				await selectSession(sessions[0].id);
 			}
@@ -103,11 +113,7 @@
 	async function handleModelChange(model: string) {
 		currentModel = model;
 		if (activeSessionId) {
-			await fetch(`/api/sessions/${activeSessionId}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ model })
-			});
+			await updateSessionRemote({ id: activeSessionId, model });
 			// Update local session
 			sessions = sessions.map((s) => (s.id === activeSessionId ? { ...s, model } : s));
 		}
@@ -143,7 +149,7 @@
 					if (parsed.tool_status === 'searching') {
 						toolStatus = {
 							tool: parsed.tool,
-							query: parsed.args?.query || ''
+							query: parsed.args?.query || parsed.args?.url || parsed.args?.action || ''
 						};
 						continue;
 					}
@@ -152,6 +158,9 @@
 						toolStatus = null;
 						if (parsed.sources && Array.isArray(parsed.sources)) {
 							searchedSources = [...searchedSources, ...parsed.sources];
+						}
+						if (parsed.screenshots && Array.isArray(parsed.screenshots)) {
+							collectedScreenshots = [...collectedScreenshots, ...parsed.screenshots];
 						}
 						continue;
 					}
@@ -171,9 +180,10 @@
 							model: currentModel,
 							createdAt: new Date().toISOString(),
 							durationMs,
-							sources: searchedSources.length > 0 ? [...searchedSources] : undefined
+							sources: searchedSources.length > 0 ? [...searchedSources] : undefined,
+							screenshots: collectedScreenshots.length > 0 ? [...collectedScreenshots] : undefined
 						};
-						messages = [...messages, assistantMsg];
+						messagesData = [...messagesData, assistantMsg];
 						streamingContent = '';
 
 						if (parsed.newTitle) {
@@ -186,7 +196,7 @@
 							s.id === activeSessionId
 								? {
 										...s,
-										updatedAt: new Date().toISOString(),
+										updatedAt: new Date(),
 										messageCount: messages.length
 									}
 								: s
@@ -214,27 +224,17 @@
 				content: '🧠 Extracting memories from this conversation...',
 				createdAt: new Date().toISOString()
 			};
-			messages = [...messages, rememberMsg];
+			messagesData = [...messagesData, rememberMsg];
 
 			try {
-				const res = await fetch('/api/memory/extract', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ sessionId: activeSessionId })
-				});
+				const result = await extractMemories({ sessionId: activeSessionId });
 
-				const result = await res.json();
-
-				if (result.error) {
-					rememberMsg.content = `**Error:** ${result.error}`;
-				} else {
-					const items = result.extracted || [];
-					rememberMsg.content = `🧠 **Memory extraction complete!**\n\n**${result.chunksStored}** memories stored${result.filesCreated > 0 ? `, **${result.filesCreated}** note files created` : ''}.\n\n${items.length > 0 ? '**Extracted:**\n' + items.map((item: string) => `- ${item}`).join('\n') : ''}`;
-				}
-				messages = [...messages]; // trigger reactivity
+				const items = result.extracted || [];
+				rememberMsg.content = `🧠 **Memory extraction complete!**\n\n**${result.chunksStored}** memories stored${result.filesCreated > 0 ? `, **${result.filesCreated}** note files created` : ''}.\n\n${items.length > 0 ? '**Extracted:**\n' + items.map((item: string) => `- ${item}`).join('\n') : ''}`;
+				messagesData = [...messagesData]; // trigger reactivity
 			} catch (error) {
 				rememberMsg.content = `**Error:** ${error instanceof Error ? error.message : 'Memory extraction failed'}`;
-				messages = [...messages];
+				messagesData = [...messagesData];
 			}
 			return;
 		}
@@ -252,11 +252,12 @@
 			content,
 			createdAt: new Date().toISOString()
 		};
-		messages = [...messages, userMsg];
+		messagesData = [...messagesData, userMsg];
 		isStreaming = true;
 		streamingContent = '';
 		toolStatus = null;
 		searchedSources = [];
+		collectedScreenshots = [];
 		streamStartTime = Date.now();
 
 		try {
@@ -285,7 +286,7 @@
 				content: `**Error:** ${error instanceof Error ? error.message : 'Something went wrong'}`,
 				createdAt: new Date().toISOString()
 			};
-			messages = [...messages, errorMsg];
+			messagesData = [...messagesData, errorMsg];
 		} finally {
 			isStreaming = false;
 			streamingContent = '';
@@ -316,18 +317,17 @@
 		if (!lastUserMsg) return;
 
 		// Delete the assistant message from DB
-		await fetch(`/api/sessions/${activeSessionId}/messages/${lastAssistant.id}`, {
-			method: 'DELETE'
-		});
+		await deleteMessageAndAfter({ sessionId: activeSessionId, messageId: lastAssistant.id });
 
 		// Remove from local state
-		messages = messages.filter((m) => m.id !== lastAssistant.id);
+		messagesData = messagesData.filter((m) => m.id !== lastAssistant.id);
 
 		// Re-send the last user's content through the stream (without saving user msg again)
 		isStreaming = true;
 		streamingContent = '';
 		toolStatus = null;
 		searchedSources = [];
+		collectedScreenshots = [];
 		streamStartTime = Date.now();
 
 		try {
@@ -354,7 +354,7 @@
 				content: `**Error:** ${error instanceof Error ? error.message : 'Regeneration failed'}`,
 				createdAt: new Date().toISOString()
 			};
-			messages = [...messages, errorMsg];
+			messagesData = [...messagesData, errorMsg];
 		} finally {
 			isStreaming = false;
 			streamingContent = '';
@@ -370,13 +370,11 @@
 		if (!lastUserMsg) return;
 
 		// Delete from this message onward
-		await fetch(`/api/sessions/${activeSessionId}/messages/${lastUserMsg.id}`, {
-			method: 'DELETE'
-		});
+		await deleteMessageAndAfter({ sessionId: activeSessionId, messageId: lastUserMsg.id });
 
 		// Remove from local state
-		const idx = messages.indexOf(lastUserMsg);
-		messages = messages.slice(0, idx);
+		const idx = messagesData.indexOf(lastUserMsg);
+		messagesData = messagesData.slice(0, idx);
 
 		// Pre-fill the input with the old content
 		if (chatInputRef) {
@@ -437,6 +435,7 @@
 								durationMs={msg.durationMs}
 								model={msg.model}
 								sources={msg.sources}
+								screenshots={msg.screenshots}
 								onRegenerate={isLastAssistant && !isStreaming ? regenerateLastResponse : undefined}
 								onEdit={isLastUser && !isStreaming ? editLastUserMessage : undefined}
 							/>
@@ -447,7 +446,11 @@
 								<div class="chat-bubble flex items-center gap-2 bg-base-300 text-base-content">
 									<span class="loading loading-sm loading-spinner"></span>
 									<span class="text-sm">
-										🔍 Searching the web{toolStatus.query ? ` for "${toolStatus.query}"` : ''}...
+										{#if toolStatus.tool.startsWith('browse') || toolStatus.tool.startsWith('browser')}
+											🌐 Browsing{toolStatus.query ? ` "${toolStatus.query}"` : ''}...
+										{:else}
+											🔍 Searching the web{toolStatus.query ? ` for "${toolStatus.query}"` : ''}...
+										{/if}
 									</span>
 								</div>
 							</div>
@@ -458,6 +461,7 @@
 								role="assistant"
 								content={streamingContent}
 								sources={searchedSources.length > 0 ? searchedSources : undefined}
+								screenshots={collectedScreenshots.length > 0 ? collectedScreenshots : undefined}
 							/>
 						{/if}
 

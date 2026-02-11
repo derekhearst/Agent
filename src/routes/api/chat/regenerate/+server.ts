@@ -1,10 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { chatSession, message } from '$lib/server/db/schema';
-import type { ChatMessage } from '$lib/server/openrouter';
+import { db, chatSession, message } from '$lib/shared/db';
+import type { ChatMessage } from '$lib/chat/chat.remote';
 import { eq } from 'drizzle-orm';
-import { runAgent } from '$lib/agent/runner';
+import { runAgent } from '$lib/chat/chat.remote';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const { sessionId, model } = await request.json();
@@ -61,7 +60,8 @@ export const POST: RequestHandler = async ({ request }) => {
 							const data = JSON.stringify({
 								tool_status: 'complete',
 								tool: event.tool,
-								sources: event.sources
+								sources: event.sources,
+								screenshots: event.images?.map((img) => `data:${img.mimeType};base64,${img.base64}`)
 							});
 							controller.enqueue(encoder.encode(`data: ${data}\n\n`));
 							break;
