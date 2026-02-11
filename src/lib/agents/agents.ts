@@ -308,17 +308,28 @@ export async function runAgentJob(agentConfig: AgentConfig): Promise<AgentRunRes
 					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					const toolResponseMsg: any = {
 						role: 'tool',
-						content: toolResult.images?.length
-							? [
-									{ type: 'text', text: toolResult.content },
-									...toolResult.images.map((img) => ({
-										type: 'image_url',
-										image_url: { url: `data:${img.mimeType};base64,${img.base64}` }
-									}))
-								]
-							: toolResult.content,
+						content: toolResult.content,
 						toolCallId: tc.id
 					};
+
+					// If images were returned, add them as a separate user message
+					// (tool messages only support string content)
+					if (toolResult.images?.length) {
+						const imageMsg: any = {
+							role: 'user',
+							content: [
+								{
+									type: 'text',
+									text: `[Screenshot from ${tc.function.name} tool - analyze this image]`
+								},
+								...toolResult.images.map((img) => ({
+									type: 'image_url',
+									imageUrl: { url: `data:${img.mimeType};base64,${img.base64}` }
+								}))
+							]
+						};
+						messages.push(imageMsg);
+					}
 					messages.push(toolResponseMsg);
 				}
 			}

@@ -437,7 +437,7 @@ export async function runAgent(
 						{ type: 'text', text: `[Screenshot from ${tc.name} tool - analyze this image]` },
 						...toolResult.images.map((img) => ({
 							type: 'image_url',
-							image_url: { url: `data:${img.mimeType};base64,${img.base64}` }
+							imageUrl: { url: `data:${img.mimeType};base64,${img.base64}` }
 						}))
 					]
 				};
