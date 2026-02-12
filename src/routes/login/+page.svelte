@@ -38,7 +38,7 @@
 			<form onsubmit={handleSubmit} class="mt-4 flex flex-col gap-4">
 				<input
 					type="password"
-					class="input input-bordered w-full"
+					class="input-bordered input w-full"
 					placeholder="Password"
 					bind:value={password}
 					autofocus
@@ -49,7 +49,7 @@
 					<p class="text-sm text-error">{error}</p>
 				{/if}
 
-				<button type="submit" class="btn btn-primary w-full" disabled={submitting}>
+				<button type="submit" class="btn w-full btn-primary" disabled={submitting}>
 					{submitting ? 'Checking...' : 'Log In'}
 				</button>
 			</form>
