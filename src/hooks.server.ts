@@ -20,8 +20,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 		return resolve(event);
 	}
 
-	// Allow static assets through
-	if (path.startsWith('/_app/') || path.startsWith('/favicon') || path === '/robots.txt') {
+	// Allow static assets through (but NOT remote function calls)
+	if (
+		(path.startsWith('/_app/') && !path.startsWith('/_app/remote/')) ||
+		path.startsWith('/favicon') ||
+		path === '/robots.txt'
+	) {
 		return resolve(event);
 	}
 
