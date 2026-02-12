@@ -27,7 +27,9 @@ RUN mkdir -p /app/data /app/memory
 
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV ORIGIN=http://localhost:3000
+ENV ORIGIN=https://agent.derekhearst.com
+ENV PROTOCOL_HEADER=x-forwarded-proto
+ENV HOST_HEADER=x-forwarded-host
 ENV DATABASE_URL=/app/data/local.db
 ENV VECTOR_DB_URL=/app/data/vector.db
 
