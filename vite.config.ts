@@ -5,6 +5,6 @@ import { defineConfig } from 'vite';
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
 	ssr: {
-		external: ['better-sqlite3', 'sqlite-vec']
+		external: ['better-sqlite3', 'sqlite-vec', 'bindings', 'file-uri-to-path']
 	}
 });

@@ -16,9 +16,9 @@ FROM node:22-slim
 
 WORKDIR /app
 
-COPY package.json bun.lock* ./
-RUN npm install -g bun && bun install --production --frozen-lockfile
-
+# Copy node_modules from builder so externalized native modules (better-sqlite3, bindings, etc.) are available at runtime
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/drizzle ./drizzle
 

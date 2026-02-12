@@ -48,6 +48,7 @@
 	},
 	"dependencies": {
 		"@actual-app/api": "^26.2.0",
+		"better-sqlite3": "^12.6.2",
 		"@browserbasehq/stagehand": "^3.0.8",
 		"@openrouter/sdk": "^0.8.0",
 		"croner": "^10.0.1",
