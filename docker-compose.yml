@@ -1,0 +1,22 @@
+services:
+  agent:
+    build: .
+    container_name: agent
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - agent-data:/app/data
+      - agent-memory:/app/memory
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ORIGIN=http://localhost:3000
+      - DATABASE_URL=/app/data/local.db
+      - VECTOR_DB_URL=/app/data/vector.db
+
+volumes:
+  agent-data:
+  agent-memory:
