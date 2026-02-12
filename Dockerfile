@@ -9,7 +9,7 @@ COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile
 
 COPY . .
-RUN bun run build
+RUN DATABASE_URL=build.db VECTOR_DB_URL=build.db bun run build
 
 # Production stage
 FROM node:22-slim
