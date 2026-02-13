@@ -118,11 +118,12 @@ class BrowserManager {
 		return text;
 	}
 
-	/** Get page metadata (title, url, links) */
+	/** Get page metadata (title, url, links, images) */
 	async getPageInfo(sessionId: string): Promise<{
 		title: string;
 		url: string;
 		links: Array<{ text: string; href: string }>;
+		images: Array<{ src: string; alt: string }>;
 	}> {
 		const page = await this.getPage(sessionId);
 
@@ -140,7 +141,31 @@ class BrowserManager {
 				.slice(0, 30); // Top 30 links
 		});
 
-		return { title, url, links };
+		const images = await page.evaluate(() => {
+			const imgs = Array.from(document.querySelectorAll('img[src]'));
+			return imgs
+				.map((img) => ({
+					src: (img as HTMLImageElement).src,
+					alt: ((img as HTMLImageElement).alt || '').trim().substring(0, 100)
+				}))
+				.filter(
+					(i) => i.src.startsWith('http') && !i.src.includes('data:') && !i.src.includes('svg')
+				)
+				.filter((i) => {
+					// Filter out tiny icons/tracking pixels — only keep meaningful images
+					const url = i.src.toLowerCase();
+					return (
+						!url.includes('icon') &&
+						!url.includes('logo') &&
+						!url.includes('avatar') &&
+						!url.includes('1x1') &&
+						!url.includes('pixel')
+					);
+				})
+				.slice(0, 10);
+		});
+
+		return { title, url, links, images };
 	}
 
 	/** Cleanup idle sessions */
@@ -455,7 +480,12 @@ async function browserExtract(instruction: string, sessionId: string): Promise<T
 			.map((l) => `- [${l.text}](${l.href})`)
 			.join('\n');
 
-		const content = `## Extraction from: ${info.title}\nURL: ${info.url}\nInstruction: ${instruction}\n\n### Full Page Text\n${text}\n\n### All Links\n${linksList}`;
+		const imagesList = info.images
+			.slice(0, 10)
+			.map((i) => `- ![${i.alt}](${i.src})`)
+			.join('\n');
+
+		const content = `## Extraction from: ${info.title}\nURL: ${info.url}\nInstruction: ${instruction}\n\n### Full Page Text\n${text}\n\n### All Links\n${linksList}\n\n### Images\n${imagesList}`;
 
 		return {
 			content,

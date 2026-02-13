@@ -10,6 +10,7 @@ import {
 	shoppingListItem
 } from '$lib/shared/db';
 import { desc, eq, asc } from 'drizzle-orm';
+import { scheduler } from '$lib/agents/agents';
 
 // ============== TYPES ==============
 
@@ -342,6 +343,15 @@ export const approveShoppingList = command(z.string(), async (listId) => {
 		await getShoppingList(listId).refresh();
 		await getShoppingListForPlan(list.mealPlanId).refresh();
 		await getCurrentMealPlan().refresh();
+	}
+
+	// Trigger the Fred Meyer Cart agent in the background
+	try {
+		scheduler.runByName('Fred Meyer Cart').catch((err) => {
+			console.warn('Failed to trigger Fred Meyer Cart agent:', err);
+		});
+	} catch {
+		// Agent may not exist yet — that's fine
 	}
 });
 

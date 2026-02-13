@@ -85,7 +85,12 @@ import {
 	browserScreenshotTool,
 	browserCloseTool
 } from '$lib/tools/browser';
-import { getFinancesTool, createCategoryTool, assignCategoryTool, updateTransactionNotesTool } from '$lib/tools/budget';
+import {
+	getFinancesTool,
+	createCategoryTool,
+	assignCategoryTool,
+	updateTransactionNotesTool
+} from '$lib/tools/budget';
 import { searchEmailTool, readEmailTool, listEmailsTool } from '$lib/tools/google/gmail';
 import { listCalendarEventsTool, checkAvailabilityTool } from '$lib/tools/google/calendar';
 import {
@@ -93,7 +98,8 @@ import {
 	createMealPlanTool,
 	searchRecipesTool,
 	addToFredMeyerCartTool,
-	completeFredMeyerOrderTool
+	completeFredMeyerOrderTool,
+	getApprovedShoppingListTool
 } from '$lib/recipes/recipe-tools';
 
 registerTool(searchWebTool);
@@ -123,5 +129,6 @@ registerTool(createMealPlanTool);
 registerTool(searchRecipesTool);
 registerTool(addToFredMeyerCartTool);
 registerTool(completeFredMeyerOrderTool);
+registerTool(getApprovedShoppingListTool);
 
 console.log(`🔧 Registered ${registry.size} tools: ${Array.from(registry.keys()).join(', ')}`);

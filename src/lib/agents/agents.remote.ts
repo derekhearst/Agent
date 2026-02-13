@@ -76,7 +76,7 @@ const createAgentSchema = z.object({
 	name: z.string().min(1),
 	description: z.string().optional().default(''),
 	systemPrompt: z.string().min(1),
-	cronSchedule: z.string().min(1),
+	cronSchedule: z.string().default(''),
 	model: z.string().optional().default('moonshotai/kimi-k2.5'),
 	enabled: z.boolean().optional().default(true)
 });
@@ -112,9 +112,16 @@ export const createAgent = command(createAgentSchema, async (data) => {
 			content: `# ${data.name} — Temp Notes\n\n(Cleared at each run start)\n`
 		});
 
-		// Schedule if enabled
+		// Schedule if enabled (guard for empty cron handled inside scheduleAgent)
 		if (newAgent.enabled) {
-			scheduler.scheduleAgent(newAgent);
+			try {
+				scheduler.scheduleAgent(newAgent);
+			} catch (schedErr) {
+				console.warn(
+					`⚠️ Agent "${newAgent.name}" created but scheduling failed (cron: "${newAgent.cronSchedule}"):`,
+					schedErr
+				);
+			}
 		}
 
 		await getAgents().refresh();
@@ -153,7 +160,11 @@ export const updateAgent = command(updateAgentSchema, async (data) => {
 
 	const [updated] = await db.update(agent).set(updateData).where(eq(agent.id, data.id)).returning();
 
-	await scheduler.updateAgent(data.id);
+	try {
+		await scheduler.updateAgent(data.id);
+	} catch (schedErr) {
+		console.warn(`⚠️ Agent "${updated.name}" updated but re-scheduling failed:`, schedErr);
+	}
 	await getAgents().refresh();
 	await getAgentById(data.id).refresh();
 	return updated;

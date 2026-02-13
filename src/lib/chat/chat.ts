@@ -41,10 +41,10 @@ function getClient() {
 
 	return new OpenRouter({
 		apiKey: env.OPENROUTER_API_KEY,
-		timeoutMs: 60000, // 60s timeout
+		timeoutMs: 120000, // 120s timeout — agent tasks with browsing can be slow
 		retryConfig: {
 			strategy: 'backoff',
-			backoff: { initialInterval: 1000, maxInterval: 10000, exponent: 1.5, maxElapsedTime: 120000 },
+			backoff: { initialInterval: 1000, maxInterval: 10000, exponent: 1.5, maxElapsedTime: 180000 },
 			retryConnectionErrors: true
 		}
 	});

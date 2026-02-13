@@ -74,6 +74,12 @@ You have tools and should use them immediately without asking for permission or 
 - get_finances: Actual Budget - account balances, budget breakdown, transactions.
 - search_email / read_email / list_emails: Gmail access (FULL READ - no permission needed).
 - list_calendar_events / check_availability: Google Calendar access.
+- save_recipe: Save a recipe with title, description, steps, ingredients, source URL, tags, etc.
+- search_recipes: Search existing saved recipes by title, cuisine, or tags.
+- create_meal_plan: Create a weekly meal plan from saved recipe IDs and auto-generate a shopping list.
+- get_approved_shopping_list: Get the most recent approved shopping list with all items.
+- add_to_fred_meyer_cart: Add approved shopping list items to Fred Meyer online cart via browser.
+- complete_fred_meyer_order: Mark a shopping list as ordered after adding items to cart.
 
 ### Critical Rules
 1. BE PROACTIVE — use tools immediately, don't ask clarifying questions
@@ -94,6 +100,19 @@ Read memory.md first, work through your task, and update it with important findi
 When you need to log in to americastestkitchen.com:
 - Email: ${env.ATK_EMAIL}
 - Password: ${env.ATK_PASSWORD}
+Use browser_act to fill in the login form. Navigate to the sign-in page first if needed.`;
+	}
+
+	// Inject Fred Meyer credentials if available and agent prompt mentions Fred Meyer
+	if (
+		env.FRED_MEYER_EMAIL &&
+		env.FRED_MEYER_PASSWORD &&
+		agentConfig.systemPrompt.toLowerCase().includes('fred meyer')
+	) {
+		prompt += `\n\n## Fred Meyer Credentials
+When you need to log in to fredmeyer.com:
+- Email: ${env.FRED_MEYER_EMAIL}
+- Password: ${env.FRED_MEYER_PASSWORD}
 Use browser_act to fill in the login form. Navigate to the sign-in page first if needed.`;
 	}
 
@@ -163,8 +182,87 @@ Use browser_act to fill in the login form. Navigate to the sign-in page first if
 
 // ============== AGENT JOB RUNNER ==============
 
-const MAX_TOOL_ITERATIONS = 8;
+const MAX_TOOL_ITERATIONS = 999; // Effectively unlimited — constrained by MAX_RUN_TIME_MS instead
 const MAX_RETRIES = 2;
+const MAX_RUN_TIME_MS = 30 * 60 * 1000; // 30 minutes
+const MAX_TOOL_RESULT_CHARS = 4000; // Truncate tool results to prevent context overflow
+const MAX_IMAGE_MESSAGES = 2; // Only keep the N most recent screenshot messages
+const MAX_NUDGE_COUNT = 5; // Maximum times to nudge a stalled agent
+
+/**
+ * Estimate message array size in characters (rough proxy for tokens).
+ * Used to decide when to trim context.
+ */
+function estimateContextSize(messages: unknown[]): number {
+	return JSON.stringify(messages).length;
+}
+
+/**
+ * Trim old image/screenshot messages from the array, keeping only the N most recent.
+ * This prevents base64 screenshots from filling the context window.
+ */
+function trimImageMessages(messages: unknown[], maxImages: number): void {
+	const imageIndices: number[] = [];
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i] as Record<string, unknown>;
+		if (msg.role === 'user' && Array.isArray(msg.content)) {
+			const hasImage = (msg.content as Array<Record<string, unknown>>).some(
+				(c) => c.type === 'image_url'
+			);
+			if (hasImage) imageIndices.push(i);
+		}
+	}
+	// Remove all but the last maxImages image messages
+	const toRemove = imageIndices.slice(0, Math.max(0, imageIndices.length - maxImages));
+	for (let i = toRemove.length - 1; i >= 0; i--) {
+		messages.splice(toRemove[i], 1);
+	}
+}
+
+/**
+ * Build a compressed summary of what the agent has accomplished so far,
+ * for use when restarting context after a nudge.
+ */
+function buildProgressSummary(toolCallLog: AgentRunResult['toolCalls'], agentName: string): string {
+	const savedRecipes = toolCallLog.filter((t) => t.tool === 'save_recipe');
+	const mealPlanCalls = toolCallLog.filter((t) => t.tool === 'create_meal_plan');
+	const browseCalls = toolCallLog.filter(
+		(t) => t.tool === 'browse_url' || t.tool === 'browser_extract'
+	);
+
+	let summary = `## Progress So Far\n`;
+	summary += `- Total tool calls made: ${toolCallLog.length}\n`;
+
+	if (savedRecipes.length > 0) {
+		summary += `- Recipes saved (${savedRecipes.length}):\n`;
+		for (const r of savedRecipes) {
+			const title = (r.args as Record<string, unknown>).title || 'Unknown';
+			summary += `  - "${title}"\n`;
+		}
+	} else {
+		summary += `- Recipes saved: 0\n`;
+	}
+
+	if (mealPlanCalls.length > 0) {
+		summary += `- Meal plan created: YES\n`;
+	} else {
+		summary += `- Meal plan created: NO — you MUST call create_meal_plan before finishing\n`;
+	}
+
+	summary += `- Pages browsed: ${browseCalls.length}\n`;
+
+	// Include recipe IDs from save_recipe results
+	const recipeIds: string[] = [];
+	for (const r of savedRecipes) {
+		const match = r.result.match(/id["\s:]+(\d+)/i);
+		if (match) recipeIds.push(match[1]);
+	}
+	if (recipeIds.length > 0) {
+		summary += `- Saved recipe IDs: ${recipeIds.join(', ')}\n`;
+	}
+
+	return summary;
+}
 
 export async function runAgentJob(agentConfig: AgentConfig): Promise<AgentRunResult> {
 	const startTime = Date.now();
@@ -199,7 +297,7 @@ export async function runAgentJob(agentConfig: AgentConfig): Promise<AgentRunRes
 		const tools = hasTools() ? getToolDefinitions() : [];
 
 		// Start the conversation
-		const messages: ChatMessage[] = [
+		let messages: ChatMessage[] = [
 			{ role: 'system', content: systemPrompt },
 			{
 				role: 'user',
@@ -209,6 +307,7 @@ export async function runAgentJob(agentConfig: AgentConfig): Promise<AgentRunRes
 		];
 
 		let fullContent = '';
+		let nudgeCount = 0;
 
 		if (tools.length === 0) {
 			const completion = await chatSimple(messages, agentConfig.model);
@@ -217,6 +316,26 @@ export async function runAgentJob(agentConfig: AgentConfig): Promise<AgentRunRes
 		} else {
 			// Tool-calling loop
 			for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+				// Check time limit
+				if (Date.now() - startTime > MAX_RUN_TIME_MS) {
+					console.warn(
+						`⏰ Agent ${agentConfig.name} hit 30-minute time limit at iteration ${iteration}`
+					);
+					fullContent += '\n\n[Agent run stopped: 30-minute time limit reached]';
+					break;
+				}
+
+				// Trim screenshots to prevent context overflow
+				trimImageMessages(messages as unknown[], MAX_IMAGE_MESSAGES);
+
+				// Log context size periodically
+				if (iteration % 5 === 0) {
+					const ctxSize = estimateContextSize(messages);
+					console.log(
+						`  📊 Agent ${agentConfig.name} iteration ${iteration}: ${messages.length} messages, ~${Math.round(ctxSize / 1024)}KB context, ${toolCallLog.length} tool calls`
+					);
+				}
+
 				let completion;
 				let lastError = '';
 
@@ -241,7 +360,12 @@ export async function runAgentJob(agentConfig: AgentConfig): Promise<AgentRunRes
 				}
 
 				const choice = completion.choices?.[0];
-				if (!choice) break;
+				if (!choice) {
+					console.warn(
+						`  ⚠️ Agent ${agentConfig.name} got empty choices at iteration ${iteration}`
+					);
+					break;
+				}
 
 				const messageContent = choice.message?.content;
 				const content = typeof messageContent === 'string' ? messageContent : '';
@@ -257,6 +381,55 @@ export async function runAgentJob(agentConfig: AgentConfig): Promise<AgentRunRes
 					| undefined;
 
 				if (!toolCalls || toolCalls.length === 0) {
+					console.log(
+						`  💬 Agent ${agentConfig.name} responded without tool calls at iteration ${iteration}. Content: "${content.substring(0, 100)}..."`
+					);
+
+					// Model stopped calling tools — check if it actually finished the job
+					const hasCalledCreateMealPlan = toolCallLog.some((t) => t.tool === 'create_meal_plan');
+					const savedRecipeCount = toolCallLog.filter((t) => t.tool === 'save_recipe').length;
+
+					if (
+						agentConfig.name === 'Meal Planner' &&
+						(!hasCalledCreateMealPlan || savedRecipeCount < 5) &&
+						nudgeCount < MAX_NUDGE_COUNT &&
+						Date.now() - startTime < MAX_RUN_TIME_MS - 60000
+					) {
+						nudgeCount++;
+
+						// Build what's missing
+						const missing: string[] = [];
+						if (savedRecipeCount < 5)
+							missing.push(
+								`only ${savedRecipeCount}/5 recipes saved — you need ${5 - savedRecipeCount} more`
+							);
+						if (!hasCalledCreateMealPlan)
+							missing.push(
+								'create_meal_plan was never called — you MUST call it with the saved recipe IDs'
+							);
+
+						// FRESH CONTEXT RESTART — compress the conversation to avoid context overflow
+						const progressSummary = buildProgressSummary(toolCallLog, agentConfig.name);
+						const nudgePrompt = `YOU ARE NOT DONE (nudge ${nudgeCount}/${MAX_NUDGE_COUNT}). Your task is incomplete:\n- ${missing.join('\n- ')}\n\n${progressSummary}\n\nContinue working NOW. Call your tools immediately. Do NOT explain what you will do — just DO it.\n${savedRecipeCount < 3 ? 'NEXT STEP: Browse americastestkitchen.com to find another recipe. Navigate to a recipe page, extract the content, and call save_recipe.' : savedRecipeCount < 5 ? 'NEXT STEP: Generate an AI recipe. Call save_recipe directly with a creative recipe you invent (40 min or less, no grill, no sub-recipes).' : 'NEXT STEP: Call create_meal_plan with the saved recipe IDs to create a weekly meal plan.'}`;
+
+						// Reset messages with fresh context instead of accumulating forever
+						messages = [
+							{ role: 'system', content: systemPrompt },
+							{ role: 'user', content: nudgePrompt }
+						] as ChatMessage[];
+
+						console.log(
+							`🔄 Agent ${agentConfig.name} nudge ${nudgeCount}/${MAX_NUDGE_COUNT}: ${savedRecipeCount}/5 recipes, meal plan: ${hasCalledCreateMealPlan}. FRESH CONTEXT RESTART.`
+						);
+						continue;
+					}
+
+					if (agentConfig.name === 'Meal Planner' && nudgeCount >= MAX_NUDGE_COUNT) {
+						console.warn(
+							`⚠️ Agent ${agentConfig.name} hit max nudge count (${MAX_NUDGE_COUNT}). Accepting partial results.`
+						);
+					}
+
 					break;
 				}
 
@@ -305,10 +478,17 @@ export async function runAgentJob(agentConfig: AgentConfig): Promise<AgentRunRes
 						// Non-critical
 					}
 
+					// Truncate tool result content to prevent context overflow
+					const truncatedContent =
+						toolResult.content.length > MAX_TOOL_RESULT_CHARS
+							? toolResult.content.substring(0, MAX_TOOL_RESULT_CHARS) +
+								`\n\n[...truncated from ${toolResult.content.length} chars]`
+							: toolResult.content;
+
 					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					const toolResponseMsg: any = {
 						role: 'tool',
-						content: toolResult.content,
+						content: truncatedContent,
 						toolCallId: tc.id
 					};
 
@@ -442,6 +622,14 @@ class AgentScheduler {
 	}) {
 		this.removeAgent(agentConfig.id);
 
+		// Skip scheduling if no cron expression (triggered manually/programmatically)
+		if (!agentConfig.cronSchedule || !agentConfig.cronSchedule.trim()) {
+			console.log(
+				`  🤖 "${agentConfig.name}" has no cron schedule — available for manual/programmatic triggering only`
+			);
+			return;
+		}
+
 		try {
 			const cron = new Cron(agentConfig.cronSchedule, async () => {
 				console.log(
@@ -511,6 +699,26 @@ class AgentScheduler {
 		}
 
 		console.log(`🤖 Agent "${agentData.name}" manually triggered`);
+
+		await runAgentJob({
+			id: agentData.id,
+			name: agentData.name,
+			systemPrompt: agentData.systemPrompt,
+			model: agentData.model,
+			memoryPath: agentData.memoryPath
+		});
+	}
+
+	async runByName(agentName: string): Promise<void> {
+		const agentData = await db.query.agent.findFirst({
+			where: eq(agent.name, agentName)
+		});
+
+		if (!agentData) {
+			throw new Error(`Agent not found by name: ${agentName}`);
+		}
+
+		console.log(`🤖 Agent "${agentData.name}" triggered by name`);
 
 		await runAgentJob({
 			id: agentData.id,

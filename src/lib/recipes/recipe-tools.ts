@@ -8,7 +8,7 @@ import {
 	shoppingList,
 	shoppingListItem
 } from '$lib/shared/db';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, asc } from 'drizzle-orm';
 
 // ============== save_recipe ==============
 
@@ -111,7 +111,7 @@ export const saveRecipeTool: ToolHandler = {
 			.returning();
 
 		return {
-			content: `Recipe "${newRecipe.title}" saved successfully with ID: ${newRecipe.id}. It has ${(args.steps as unknown[])?.length || 0} steps and ${(args.ingredients as unknown[])?.length || 0} ingredients.`
+			content: `Recipe "${newRecipe.title}" saved successfully with ID: ${newRecipe.id}. It has ${(args.steps as unknown[])?.length || 0} steps and ${(args.ingredients as unknown[])?.length || 0} ingredients.${!args.imageUrl ? ' WARNING: No image URL was provided — look for the recipe image in the ### Images section of browser_extract output and include it next time.' : ''}`
 		};
 	}
 };
@@ -399,7 +399,7 @@ export const completeFredMeyerOrderTool: ToolHandler = {
 		function: {
 			name: 'complete_fred_meyer_order',
 			description:
-				'Mark a shopping list as ordered after successfully adding all items to Fred Meyer cart.',
+				'Mark a shopping list as ordered after successfully adding all items to the Fred Meyer cart. This does NOT checkout or place an order — the user will review the cart and checkout manually.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -423,5 +423,57 @@ export const completeFredMeyerOrderTool: ToolHandler = {
 		return {
 			content: `Shopping list marked as ordered. Summary: ${(args.summary as string) || 'Completed'}`
 		};
+	}
+};
+
+// ============== get_approved_shopping_list ==============
+
+export const getApprovedShoppingListTool: ToolHandler = {
+	definition: {
+		type: 'function',
+		function: {
+			name: 'get_approved_shopping_list',
+			description:
+				'Get the most recent approved shopping list with all its items. Use this to find what items need to be added to the Fred Meyer cart.',
+			parameters: {
+				type: 'object',
+				properties: {}
+			}
+		}
+	},
+	execute: async () => {
+		const list = await db.query.shoppingList.findFirst({
+			where: eq(shoppingList.status, 'approved'),
+			orderBy: [desc(shoppingList.createdAt)],
+			with: {
+				items: {
+					orderBy: [asc(shoppingListItem.category), asc(shoppingListItem.ingredientName)]
+				}
+			}
+		});
+
+		if (!list) {
+			return {
+				content:
+					'No approved shopping lists found. The user needs to approve a shopping list first.'
+			};
+		}
+
+		const itemsByCategory = new Map<string, string[]>();
+		for (const item of list.items) {
+			if (item.checked) continue;
+			const cat = item.category || 'other';
+			if (!itemsByCategory.has(cat)) itemsByCategory.set(cat, []);
+			itemsByCategory
+				.get(cat)!
+				.push(`- ${item.quantity} ${item.unit || ''} ${item.ingredientName}`.trim());
+		}
+
+		let output = `Shopping List ID: ${list.id}\nStatus: ${list.status}\nTotal items: ${list.items.length}\n\nItems by category:\n`;
+		for (const [cat, items] of itemsByCategory) {
+			output += `\n### ${cat.charAt(0).toUpperCase() + cat.slice(1)}\n${items.join('\n')}\n`;
+		}
+
+		return { content: output };
 	}
 };

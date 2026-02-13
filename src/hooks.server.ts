@@ -3,6 +3,17 @@ import type { Handle } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { scheduler } from '$lib/agents/agents';
 
+// Prevent uncaught DOMException/TimeoutError from crashing the process
+// (OpenRouter SDK's AbortSignal.timeout can fire dangling rejections)
+process.on('unhandledRejection', (reason) => {
+	const msg = reason instanceof Error ? reason.message : String(reason);
+	if (msg.includes('aborted') || msg.includes('timeout') || msg.includes('TimeoutError')) {
+		console.warn('⚠️ Suppressed timeout-related unhandled rejection:', msg);
+		return;
+	}
+	console.error('Unhandled rejection:', reason);
+});
+
 // Initialize the scheduler (loads agents from DB, starts cron jobs)
 scheduler.init().catch((err) => {
 	console.error('Failed to initialize agent scheduler:', err);
