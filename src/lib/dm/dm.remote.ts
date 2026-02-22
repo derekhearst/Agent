@@ -943,6 +943,155 @@ export const deletePartyMember = command(
 	}
 );
 
+// Import character sheet from extracted PDF text — uses AI to parse into party member fields
+export const importCharacterSheet = command(
+	z.object({
+		campaignId: z.string(),
+		pdfText: z.string().min(1),
+		filename: z.string().optional()
+	}),
+	async (data) => {
+		const parsePrompt: ChatMessage[] = [
+			{
+				role: 'system',
+				content: `You are a D&D 5e character sheet parser. Extract structured character data from the provided text.
+Return ONLY valid JSON (no markdown fences, no explanation) as an array of character objects.
+Each character object should have these fields:
+{
+  "playerName": "Player's real name (use 'Unknown' if not found)",
+  "characterName": "Character name (REQUIRED — look for character name, name field, or the most prominent name. Use 'Unknown Character' if truly not found)",
+  "race": "Race/species",
+  "class": "Class (include subclass if mentioned, e.g. 'Fighter (Battle Master)')",
+  "level": number,
+  "backstoryHooks": "Any backstory, bonds, flaws, or ideals mentioned",
+  "notableItems": "JSON array string of notable equipment/magic items, e.g. '[\"Flame Tongue Sword\", \"Bag of Holding\"]'",
+  "relationships": "Any mentioned allies, enemies, or connections",
+  "notes": "Other notable info: HP, AC, ability scores (STR/DEX/CON/INT/WIS/CHA), saving throws, proficiencies, spells, features, etc."
+}
+IMPORTANT:
+- Always return at least one character if ANY D&D-related data is present (ability scores, class, race, spells, etc.)
+- If a character name is not explicitly labeled, infer it from context or use "Unknown Character"
+- If you find multiple characters, return an array with all of them
+- Only return an empty array [] if the text has absolutely NO D&D character data
+- Be thorough — include ALL ability scores, HP, AC, saving throws, skills, features, and spells in the notes field`
+			},
+			{
+				role: 'user',
+				content: `Parse this character sheet PDF text:\n\n${data.pdfText.slice(0, 15000)}`
+			}
+		];
+
+		console.log(
+			`[importCharacterSheet] PDF text length: ${data.pdfText.length}, first 300 chars:`,
+			data.pdfText.slice(0, 300)
+		);
+
+		const aiResult = await chatSimple(parsePrompt);
+		const responseText = aiResult.choices?.[0]?.message?.content?.trim() || '[]';
+
+		console.log(`[importCharacterSheet] AI response (first 500):`, responseText.slice(0, 500));
+
+		// Extract JSON from response (handle markdown fences)
+		let jsonStr = responseText;
+		const fenceMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
+		if (fenceMatch) jsonStr = fenceMatch[1].trim();
+
+		// Also try to extract JSON array/object if surrounded by other text
+		if (!jsonStr.startsWith('[') && !jsonStr.startsWith('{')) {
+			const arrayMatch = jsonStr.match(/(\[[\s\S]*\])/);
+			const objMatch = jsonStr.match(/(\{[\s\S]*\})/);
+			if (arrayMatch) jsonStr = arrayMatch[1];
+			else if (objMatch) jsonStr = objMatch[1];
+		}
+
+		let characters: Array<{
+			playerName?: string;
+			characterName?: string;
+			race?: string;
+			class?: string;
+			level?: number;
+			backstoryHooks?: string;
+			notableItems?: string;
+			relationships?: string;
+			notes?: string;
+		}>;
+		try {
+			const parsed = JSON.parse(jsonStr);
+			characters = Array.isArray(parsed) ? parsed : [parsed];
+		} catch {
+			throw new Error(
+				'AI failed to parse character sheet into valid JSON. Try pasting a cleaner export.'
+			);
+		}
+
+		if (characters.length === 0) {
+			console.warn(
+				'[importCharacterSheet] AI returned empty array. PDF text preview:',
+				data.pdfText.slice(0, 500)
+			);
+			console.warn('[importCharacterSheet] Full AI response:', responseText);
+			throw new Error(
+				'No character data found in the PDF. The AI could not identify any D&D character information. Check the server logs for details.'
+			);
+		}
+
+		const created = [];
+		for (const char of characters) {
+			if (!char.characterName) continue;
+			const [member] = await db
+				.insert(dmPartyMember)
+				.values({
+					campaignId: data.campaignId,
+					playerName: char.playerName || 'Unknown',
+					characterName: char.characterName,
+					race: char.race || null,
+					class: char.class || null,
+					level: char.level || 1,
+					backstoryHooks: char.backstoryHooks || '',
+					notableItems: char.notableItems || '[]',
+					relationships: char.relationships || '',
+					notes: char.notes || null
+				})
+				.returning();
+			created.push(member);
+		}
+
+		// Also store the raw text as a source for AI context
+		const sourceTitle = data.filename
+			? `Character Sheet: ${data.filename.replace(/\.[^.]+$/, '')}`
+			: `Character Sheet: ${characters.map((c) => c.characterName).join(', ')}`;
+
+		const [source] = await db
+			.insert(dmSource)
+			.values({
+				campaignId: data.campaignId,
+				title: sourceTitle,
+				content: data.pdfText.slice(0, 50000),
+				type: 'file'
+			})
+			.returning();
+
+		// Vectorize for RAG
+		try {
+			const chunks = chunkText(data.pdfText, 500, 100);
+			const sourceTag = `dm/${data.campaignId}/source/${source.id}`;
+			await storeChunks(
+				chunks.map((text) => ({
+					content: text,
+					meta: { type: 'knowledge' as const, source: sourceTag }
+				}))
+			);
+			await db.update(dmSource).set({ vectorized: true }).where(eq(dmSource.id, source.id));
+		} catch (e) {
+			console.error('Failed to vectorize character sheet:', e);
+		}
+
+		await getPartyMembers(data.campaignId).refresh();
+		await getCampaignById(data.campaignId).refresh();
+		return { created, count: created.length };
+	}
+);
+
 // ============== LOCATIONS ==============
 
 export const getLocations = query(z.string(), async (campaignId) => {

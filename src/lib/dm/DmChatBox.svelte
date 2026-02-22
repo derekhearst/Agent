@@ -39,7 +39,11 @@
 	async function loadHistory() {
 		isLoadingHistory = true;
 		try {
-			const existing = await getSessionMessages(sessionId!);
+			// Add timeout to prevent infinite loading
+			const timeoutPromise = new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error('Timeout loading history')), 10000)
+			);
+			const existing = await Promise.race([getSessionMessages(sessionId!), timeoutPromise]);
 			messages = existing
 				.filter((m: { role: string }) => m.role === 'user' || m.role === 'assistant')
 				.map(
@@ -60,6 +64,8 @@
 				);
 		} catch (err) {
 			console.error('Failed to load chat history:', err);
+			// Don't block the UI — allow chatting even if history fails
+			messages = [];
 		} finally {
 			isLoadingHistory = false;
 		}

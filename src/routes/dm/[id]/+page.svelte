@@ -13,14 +13,11 @@
 	import DmChatBox from '$lib/dm/DmChatBox.svelte';
 	import SessionRecapView from '$lib/dm/SessionRecapView.svelte';
 	import DmEditModal from '$lib/dm/DmEditModal.svelte';
-	import DiceRoller from '$lib/dm/DiceRoller.svelte';
 	import SessionTimeline from '$lib/dm/SessionTimeline.svelte';
 	import SessionScratchpad from '$lib/dm/SessionScratchpad.svelte';
-	import RuleQuickLookup from '$lib/dm/RuleQuickLookup.svelte';
 	import LocationTracker from '$lib/dm/LocationTracker.svelte';
 	import InGameCalendar from '$lib/dm/InGameCalendar.svelte';
 	import CampaignExportImport from '$lib/dm/CampaignExportImport.svelte';
-	import RandomGenerators from '$lib/dm/RandomGenerators.svelte';
 	import RelationshipWeb from '$lib/dm/RelationshipWeb.svelte';
 	import {
 		getCampaignById,
@@ -64,7 +61,9 @@
 		| 'items'
 		| 'party'
 		| 'locations'
-		| 'calendar';
+		| 'calendar'
+		| 'consequences'
+		| 'relationships';
 	let activeTab = $state<TabKey>('overview');
 
 	// Modal state
@@ -433,7 +432,7 @@
 			<!-- Tabs -->
 			<div class="border-b border-base-300 px-4">
 				<div role="tablist" class="tabs-bordered tabs">
-					{#each [{ key: 'overview', label: '📊 Overview' }, { key: 'sessions', label: '📋 Sessions' }, { key: 'sources', label: '📚 Sources' }, { key: 'world', label: '🌍 World State' }, { key: 'npcs', label: '👤 NPCs' }, { key: 'items', label: '⚔️ Items' }, { key: 'party', label: '🛡️ Party' }, { key: 'locations', label: '📍 Locations' }, { key: 'calendar', label: '📅 Calendar' }] as tab (tab.key)}
+					{#each [{ key: 'overview', label: '📊 Overview' }, { key: 'sessions', label: '📋 Sessions' }, { key: 'sources', label: '📚 Sources' }, { key: 'world', label: '🌍 World State' }, { key: 'npcs', label: '👤 NPCs' }, { key: 'items', label: '⚔️ Items' }, { key: 'party', label: '🛡️ Party' }, { key: 'locations', label: '📍 Locations' }, { key: 'calendar', label: '📅 Calendar' }, { key: 'consequences', label: '🪴 Butterfly Effect' }, { key: 'relationships', label: '🕸️ Relationships' }] as tab (tab.key)}
 						<button
 							role="tab"
 							class="tab"
@@ -446,11 +445,12 @@
 
 			<!-- Tab Content -->
 			<div class="flex flex-1 overflow-hidden">
-				<div class="flex-1 overflow-y-auto p-4">
+				<div class="flex flex-1 flex-col overflow-y-auto p-4">
 					{#if activeTab === 'overview'}
 						<!-- Overview: Quick stats + Chat -->
-						<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-							<div class="lg:col-span-2">
+						<div class="flex min-h-full flex-1 flex-col gap-4">
+							<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+								<div class="lg:col-span-2">
 								<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
 									<div class="stat rounded-box border border-base-300 bg-base-200 p-3">
 										<div class="stat-title text-xs">Sessions</div>
@@ -522,15 +522,15 @@
 									/>
 								{/if}
 								{#if campaign.consequences?.length > 0}
-									<ConsequenceLog
-										consequences={campaign.consequences.slice(0, 5)}
-										onResolve={handleResolveConsequence}
-										onDelete={handleDeleteConsequence}
-									/>
+									<div class="rounded-box border border-base-300 bg-base-200 p-3">
+										<div class="flex items-center justify-between">
+											<span class="text-xs font-semibold">🪴 Unresolved ({campaign.consequences.filter((c) => {
+												try { return JSON.parse(c.results).some((r) => !r.resolved); } catch { return true; }
+											}).length})</span>
+											<button class="btn btn-ghost btn-xs" onclick={() => (activeTab = 'consequences')}>View All →</button>
+										</div>
+									</div>
 								{/if}
-								<DiceRoller />
-								<RandomGenerators />
-								<RuleQuickLookup {campaignId} />
 								{#if campaign.sessions?.length > 0}
 									<SessionTimeline
 										sessions={campaign.sessions}
@@ -543,17 +543,10 @@
 						<!-- Campaign Chat (always visible at bottom of overview) -->
 						{#if campaign.chatSessionId}
 							<div
-								class="mt-4 rounded-box border border-base-300 bg-base-200"
-								style="height: clamp(300px, 40vh, 600px);"
+								class="flex-1 rounded-box border border-base-300 bg-base-200"
+								style="min-height: 300px;"
 							>
 								<DmChatBox {campaignId} sessionId={campaign.chatSessionId} />
-							</div>
-						{/if}
-
-						<!-- Relationship Web -->
-						{#if campaign.npcs?.length > 0 || campaign.factions?.length > 0}
-							<div class="mt-4">
-								<RelationshipWeb npcs={campaign.npcs || []} factions={campaign.factions || []} />
 							</div>
 						{/if}
 
@@ -563,6 +556,7 @@
 								<SessionScratchpad session={activeSession} {campaignId} onUpdate={loadCampaign} />
 							</div>
 						{/if}
+						</div>
 					{:else if activeTab === 'sessions'}
 						<div class="flex flex-col gap-4">
 							<div class="flex items-center justify-between">
@@ -681,12 +675,6 @@
 									await loadCampaign();
 								}}
 							/>
-
-							<ConsequenceLog
-								consequences={campaign.consequences || []}
-								onResolve={handleResolveConsequence}
-								onDelete={handleDeleteConsequence}
-							/>
 						</div>
 					{:else if activeTab === 'npcs'}
 						<NpcGrid
@@ -707,6 +695,8 @@
 							members={campaign.partyMembers || []}
 							onAdd={handleAddPartyMember}
 							onEdit={(m) => openModal('party', m)}
+							{campaignId}
+							onUpdate={loadCampaign}
 						/>
 					{:else if activeTab === 'locations'}
 						<LocationTracker
@@ -723,6 +713,20 @@
 							{campaignId}
 							onUpdate={loadCampaign}
 						/>
+					{:else if activeTab === 'consequences'}
+						<ConsequenceLog
+							consequences={campaign.consequences || []}
+							onResolve={handleResolveConsequence}
+							onDelete={handleDeleteConsequence}
+						/>
+					{:else if activeTab === 'relationships'}
+						{#if campaign.npcs?.length > 0 || campaign.factions?.length > 0}
+							<RelationshipWeb npcs={campaign.npcs || []} factions={campaign.factions || []} />
+						{:else}
+							<p class="py-12 text-center text-sm opacity-50">
+								Add NPCs and factions to see the relationship web.
+							</p>
+						{/if}
 					{/if}
 				</div>
 			</div>

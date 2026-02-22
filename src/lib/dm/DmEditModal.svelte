@@ -188,7 +188,7 @@
 
 {#if open}
 	<div class="modal-open modal">
-		<div class="modal-box max-h-[85vh] max-w-2xl overflow-y-auto">
+		<div class="modal-box max-h-[85vh] overflow-y-auto {entityType === 'party' ? 'max-w-3xl' : 'max-w-2xl'}">
 			<button class="btn absolute top-4 right-4 btn-circle btn-ghost btn-sm" onclick={onClose}>
 				✕
 			</button>
@@ -481,105 +481,123 @@
 						></textarea>
 					</label>
 				{:else if entityType === 'party'}
-					<div class="grid grid-cols-2 gap-3">
-						<label class="form-control">
-							<span class="label-text text-xs">Character Name *</span>
-							<input
-								type="text"
-								class="input-bordered input input-sm"
-								bind:value={form.characterName}
-								required
-							/>
-						</label>
-						<label class="form-control">
-							<span class="label-text text-xs">Player Name *</span>
-							<input
-								type="text"
-								class="input-bordered input input-sm"
-								bind:value={form.playerName}
-								required
-							/>
-						</label>
+					<!-- Identity Section -->
+					<div class="rounded-lg border border-base-300 bg-base-200/30 p-4">
+						<h4 class="mb-3 text-xs font-semibold uppercase tracking-wider opacity-50">Identity</h4>
+						<div class="grid grid-cols-2 gap-3">
+							<label class="form-control">
+								<span class="label-text text-xs font-medium">Character Name *</span>
+								<input
+									type="text"
+									class="input-bordered input input-sm"
+									bind:value={form.characterName}
+									required
+								/>
+							</label>
+							<label class="form-control">
+								<span class="label-text text-xs font-medium">Player Name *</span>
+								<input
+									type="text"
+									class="input-bordered input input-sm"
+									bind:value={form.playerName}
+									required
+								/>
+							</label>
+						</div>
+						<div class="mt-3 grid grid-cols-3 gap-3">
+							<label class="form-control">
+								<span class="label-text text-xs font-medium">Race / Species</span>
+								<input
+									type="text"
+									class="input-bordered input input-sm"
+									bind:value={form.race}
+									placeholder="e.g. Tiefling"
+								/>
+							</label>
+							<label class="form-control">
+								<span class="label-text text-xs font-medium">Class</span>
+								<input
+									type="text"
+									class="input-bordered input input-sm"
+									bind:value={form.class}
+									placeholder="e.g. Rogue (Arcane Trickster)"
+								/>
+							</label>
+							<label class="form-control">
+								<span class="label-text text-xs font-medium">Level</span>
+								<input
+									type="number"
+									class="input-bordered input input-sm"
+									bind:value={form.level}
+									min="1"
+									max="20"
+								/>
+							</label>
+						</div>
 					</div>
-					<div class="grid grid-cols-3 gap-3">
-						<label class="form-control">
-							<span class="label-text text-xs">Race</span>
-							<input
-								type="text"
-								class="input-bordered input input-sm"
-								bind:value={form.race}
-								placeholder="e.g. Tiefling"
-							/>
-						</label>
-						<label class="form-control">
-							<span class="label-text text-xs">Class</span>
-							<input
-								type="text"
-								class="input-bordered input input-sm"
-								bind:value={form.class}
-								placeholder="e.g. Warlock"
-							/>
-						</label>
-						<label class="form-control">
-							<span class="label-text text-xs">Level</span>
-							<input
-								type="number"
-								class="input-bordered input input-sm"
-								bind:value={form.level}
-								min="1"
-								max="20"
-							/>
-						</label>
+
+					<!-- Roleplay Section -->
+					<div class="rounded-lg border border-base-300 bg-base-200/30 p-4">
+						<h4 class="mb-3 text-xs font-semibold uppercase tracking-wider opacity-50">Roleplay & Story</h4>
+						<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+							<label class="form-control">
+								<span class="label-text text-xs font-medium">Backstory Hooks</span>
+								<textarea
+									class="textarea-bordered textarea textarea-sm min-h-24"
+									bind:value={form.backstoryHooks}
+									placeholder="Background, bonds, flaws, ideals, personality traits..."
+								></textarea>
+							</label>
+							<label class="form-control">
+								<span class="label-text text-xs font-medium">Relationships</span>
+								<textarea
+									class="textarea-bordered textarea textarea-sm min-h-24"
+									bind:value={form.relationships}
+									placeholder="Connections to NPCs, factions, other party members..."
+								></textarea>
+							</label>
+						</div>
 					</div>
-					<label class="form-control">
-						<span class="label-text text-xs">Backstory Hooks</span>
-						<textarea
-							class="textarea-bordered textarea textarea-sm"
-							bind:value={form.backstoryHooks}
-							placeholder="Plot threads from backstory..."
-						></textarea>
-					</label>
-					<label class="form-control">
-						<span class="label-text text-xs">Relationships</span>
-						<textarea
-							class="textarea-bordered textarea textarea-sm"
-							bind:value={form.relationships}
-							placeholder="Relations with NPCs, factions..."
-						></textarea>
-					</label>
-					<!-- Notable Items -->
-					<div class="form-control">
-						<span class="label-text text-xs">Notable Items</span>
-						<div class="flex flex-wrap gap-1">
+
+					<!-- Equipment Section -->
+					<div class="rounded-lg border border-base-300 bg-base-200/30 p-4">
+						<h4 class="mb-3 text-xs font-semibold uppercase tracking-wider opacity-50">Equipment & Items</h4>
+						<div class="flex flex-wrap gap-1.5">
 							{#each parseTags(form.notableItems || '[]') as item, i (i)}
-								<span class="badge gap-1 badge-ghost badge-sm">
+								<span class="badge gap-1 badge-outline badge-sm">
 									{item}
-									<button type="button" class="text-xs" onclick={() => removeTag('notableItems', i)}
+									<button type="button" class="opacity-50 hover:opacity-100" onclick={() => removeTag('notableItems', i)}
 										>✕</button
 									>
 								</span>
 							{/each}
 						</div>
-						<div class="mt-1 flex gap-1">
+						<div class="mt-2 flex gap-2">
 							<input
 								type="text"
-								class="input-bordered input input-xs flex-1"
+								class="input-bordered input input-sm flex-1"
 								bind:value={newTag}
-								placeholder="Add item..."
+								placeholder="Add item (e.g. Cloak of Protection)..."
 								onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag('notableItems'))}
 							/>
 							<button
 								type="button"
-								class="btn btn-ghost btn-xs"
-								onclick={() => addTag('notableItems')}>+</button
+								class="btn btn-sm btn-outline"
+								onclick={() => addTag('notableItems')}>+ Add</button
 							>
 						</div>
 					</div>
-					<label class="form-control">
-						<span class="label-text text-xs">Notes</span>
-						<textarea class="textarea-bordered textarea textarea-sm" bind:value={form.notes}
+
+					<!-- Notes Section -->
+					<div class="rounded-lg border border-base-300 bg-base-200/30 p-4">
+						<h4 class="mb-3 text-xs font-semibold uppercase tracking-wider opacity-50">Stats & Notes</h4>
+						<textarea
+							class="textarea-bordered textarea textarea-sm w-full min-h-32 font-mono text-xs"
+							bind:value={form.notes}
+							placeholder="Ability Scores, HP, AC, proficiencies, spells, features..."
 						></textarea>
-					</label>
+						<p class="mt-1 text-[10px] opacity-40">Tip: Include "STR 10, DEX 14..." and "HP: 24, AC: 15" for auto-parsing on the card.</p>
+					</div>
 				{:else if entityType === 'faction'}
 					<label class="form-control">
 						<span class="label-text text-xs">Name *</span>
