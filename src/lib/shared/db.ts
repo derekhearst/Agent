@@ -202,6 +202,204 @@ export const shoppingListItem = sqliteTable('shopping_list_item', {
 	recipeId: text('recipe_id').references(() => recipe.id, { onDelete: 'set null' })
 });
 
+// ============== DM ASSISTANT SCHEMA ==============
+
+export const dmCampaign = sqliteTable('dm_campaign', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	name: text('name').notNull(),
+	description: text('description').notNull().default(''),
+	chatSessionId: text('chat_session_id'),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	updatedAt: integer('updated_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
+export const dmSource = sqliteTable('dm_source', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	campaignId: text('campaign_id')
+		.notNull()
+		.references(() => dmCampaign.id, { onDelete: 'cascade' }),
+	title: text('title').notNull(),
+	content: text('content').notNull(),
+	type: text('type', { enum: ['paste', 'file'] })
+		.notNull()
+		.default('paste'),
+	vectorized: integer('vectorized', { mode: 'boolean' }).notNull().default(false),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
+export const dmSession = sqliteTable('dm_session', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	campaignId: text('campaign_id')
+		.notNull()
+		.references(() => dmCampaign.id, { onDelete: 'cascade' }),
+	sessionNumber: integer('session_number').notNull().default(1),
+	title: text('title').notNull().default(''),
+	status: text('status', { enum: ['prep', 'active', 'completed'] })
+		.notNull()
+		.default('prep'),
+	prepContent: text('prep_content'),
+	dmRecap: text('dm_recap'),
+	playerRecap: text('player_recap'),
+	nextSessionHooks: text('next_session_hooks'),
+	chatSessionId: text('chat_session_id'),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	startedAt: integer('started_at', { mode: 'timestamp' }),
+	completedAt: integer('completed_at', { mode: 'timestamp' })
+});
+
+export const dmFaction = sqliteTable('dm_faction', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	campaignId: text('campaign_id')
+		.notNull()
+		.references(() => dmCampaign.id, { onDelete: 'cascade' }),
+	name: text('name').notNull(),
+	description: text('description').notNull().default(''),
+	reputation: integer('reputation').notNull().default(0),
+	thresholdNotes: text('threshold_notes').notNull().default('[]'),
+	notes: text('notes'),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	updatedAt: integer('updated_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
+export const dmConsequence = sqliteTable('dm_consequence', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	campaignId: text('campaign_id')
+		.notNull()
+		.references(() => dmCampaign.id, { onDelete: 'cascade' }),
+	sessionId: text('session_id'),
+	action: text('action').notNull(),
+	results: text('results').notNull().default('[]'),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
+export const dmQuest = sqliteTable('dm_quest', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	campaignId: text('campaign_id')
+		.notNull()
+		.references(() => dmCampaign.id, { onDelete: 'cascade' }),
+	title: text('title').notNull(),
+	description: text('description').notNull().default(''),
+	category: text('category', { enum: ['active_lead', 'hard_deadline', 'rumor', 'side_quest'] })
+		.notNull()
+		.default('active_lead'),
+	deadline: text('deadline'),
+	urgency: text('urgency', { enum: ['low', 'medium', 'high', 'critical'] })
+		.notNull()
+		.default('medium'),
+	status: text('status', { enum: ['active', 'completed', 'failed', 'hidden'] })
+		.notNull()
+		.default('active'),
+	relatedNpcIds: text('related_npc_ids').notNull().default('[]'),
+	relatedItemIds: text('related_item_ids').notNull().default('[]'),
+	notes: text('notes'),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	updatedAt: integer('updated_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
+export const dmItem = sqliteTable('dm_item', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	campaignId: text('campaign_id')
+		.notNull()
+		.references(() => dmCampaign.id, { onDelete: 'cascade' }),
+	name: text('name').notNull(),
+	description: text('description').notNull().default(''),
+	mechanicalProperties: text('mechanical_properties').notNull().default(''),
+	narrativeProperties: text('narrative_properties').notNull().default(''),
+	origin: text('origin').notNull().default(''),
+	currentHolder: text('current_holder'),
+	isQuestGiver: integer('is_quest_giver', { mode: 'boolean' }).notNull().default(false),
+	questHooks: text('quest_hooks').notNull().default('[]'),
+	tags: text('tags').notNull().default('[]'),
+	notes: text('notes'),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	updatedAt: integer('updated_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
+export const dmNpc = sqliteTable('dm_npc', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	campaignId: text('campaign_id')
+		.notNull()
+		.references(() => dmCampaign.id, { onDelete: 'cascade' }),
+	name: text('name').notNull(),
+	race: text('race'),
+	description: text('description').notNull().default(''),
+	location: text('location'),
+	voice: text('voice').notNull().default(''),
+	temperament: text('temperament').notNull().default(''),
+	stance: text('stance').notNull().default('Neutral'),
+	statusTags: text('status_tags').notNull().default('[]'),
+	secrets: text('secrets').notNull().default(''),
+	rumorPool: text('rumor_pool').notNull().default('[]'),
+	factionId: text('faction_id'),
+	alive: integer('alive', { mode: 'boolean' }).notNull().default(true),
+	notes: text('notes'),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	updatedAt: integer('updated_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
+export const dmPartyMember = sqliteTable('dm_party_member', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	campaignId: text('campaign_id')
+		.notNull()
+		.references(() => dmCampaign.id, { onDelete: 'cascade' }),
+	playerName: text('player_name').notNull(),
+	characterName: text('character_name').notNull(),
+	race: text('race'),
+	class: text('class'),
+	level: integer('level').notNull().default(1),
+	backstoryHooks: text('backstory_hooks').notNull().default(''),
+	notableItems: text('notable_items').notNull().default('[]'),
+	relationships: text('relationships').notNull().default(''),
+	notes: text('notes'),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
 // ============== RELATIONS ==============
 
 // Relations
@@ -264,6 +462,74 @@ export const shoppingListItemRelations = relations(shoppingListItem, ({ one }) =
 	recipe: one(recipe, {
 		fields: [shoppingListItem.recipeId],
 		references: [recipe.id]
+	})
+}));
+
+// DM Relations
+export const dmCampaignRelations = relations(dmCampaign, ({ many }) => ({
+	sources: many(dmSource),
+	sessions: many(dmSession),
+	factions: many(dmFaction),
+	consequences: many(dmConsequence),
+	quests: many(dmQuest),
+	items: many(dmItem),
+	npcs: many(dmNpc),
+	partyMembers: many(dmPartyMember)
+}));
+
+export const dmSourceRelations = relations(dmSource, ({ one }) => ({
+	campaign: one(dmCampaign, {
+		fields: [dmSource.campaignId],
+		references: [dmCampaign.id]
+	})
+}));
+
+export const dmSessionRelations = relations(dmSession, ({ one }) => ({
+	campaign: one(dmCampaign, {
+		fields: [dmSession.campaignId],
+		references: [dmCampaign.id]
+	})
+}));
+
+export const dmFactionRelations = relations(dmFaction, ({ one }) => ({
+	campaign: one(dmCampaign, {
+		fields: [dmFaction.campaignId],
+		references: [dmCampaign.id]
+	})
+}));
+
+export const dmConsequenceRelations = relations(dmConsequence, ({ one }) => ({
+	campaign: one(dmCampaign, {
+		fields: [dmConsequence.campaignId],
+		references: [dmCampaign.id]
+	})
+}));
+
+export const dmQuestRelations = relations(dmQuest, ({ one }) => ({
+	campaign: one(dmCampaign, {
+		fields: [dmQuest.campaignId],
+		references: [dmCampaign.id]
+	})
+}));
+
+export const dmItemRelations = relations(dmItem, ({ one }) => ({
+	campaign: one(dmCampaign, {
+		fields: [dmItem.campaignId],
+		references: [dmCampaign.id]
+	})
+}));
+
+export const dmNpcRelations = relations(dmNpc, ({ one }) => ({
+	campaign: one(dmCampaign, {
+		fields: [dmNpc.campaignId],
+		references: [dmCampaign.id]
+	})
+}));
+
+export const dmPartyMemberRelations = relations(dmPartyMember, ({ one }) => ({
+	campaign: one(dmCampaign, {
+		fields: [dmPartyMember.campaignId],
+		references: [dmCampaign.id]
 	})
 }));
 
@@ -380,6 +646,121 @@ client.exec(`
 		checked integer DEFAULT 0 NOT NULL,
 		recipe_id text REFERENCES recipe(id) ON DELETE SET NULL
 	);
+	CREATE TABLE IF NOT EXISTS dm_campaign (
+		id text PRIMARY KEY NOT NULL,
+		name text NOT NULL,
+		description text DEFAULT '' NOT NULL,
+		chat_session_id text,
+		created_at integer NOT NULL,
+		updated_at integer NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS dm_source (
+		id text PRIMARY KEY NOT NULL,
+		campaign_id text NOT NULL REFERENCES dm_campaign(id) ON DELETE CASCADE,
+		title text NOT NULL,
+		content text NOT NULL,
+		type text DEFAULT 'paste' NOT NULL,
+		vectorized integer DEFAULT 0 NOT NULL,
+		created_at integer NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS dm_session (
+		id text PRIMARY KEY NOT NULL,
+		campaign_id text NOT NULL REFERENCES dm_campaign(id) ON DELETE CASCADE,
+		session_number integer DEFAULT 1 NOT NULL,
+		title text DEFAULT '' NOT NULL,
+		status text DEFAULT 'prep' NOT NULL,
+		prep_content text,
+		dm_recap text,
+		player_recap text,
+		next_session_hooks text,
+		chat_session_id text,
+		created_at integer NOT NULL,
+		started_at integer,
+		completed_at integer
+	);
+	CREATE TABLE IF NOT EXISTS dm_faction (
+		id text PRIMARY KEY NOT NULL,
+		campaign_id text NOT NULL REFERENCES dm_campaign(id) ON DELETE CASCADE,
+		name text NOT NULL,
+		description text DEFAULT '' NOT NULL,
+		reputation integer DEFAULT 0 NOT NULL,
+		threshold_notes text DEFAULT '[]' NOT NULL,
+		notes text,
+		created_at integer NOT NULL,
+		updated_at integer NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS dm_consequence (
+		id text PRIMARY KEY NOT NULL,
+		campaign_id text NOT NULL REFERENCES dm_campaign(id) ON DELETE CASCADE,
+		session_id text,
+		action text NOT NULL,
+		results text DEFAULT '[]' NOT NULL,
+		created_at integer NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS dm_quest (
+		id text PRIMARY KEY NOT NULL,
+		campaign_id text NOT NULL REFERENCES dm_campaign(id) ON DELETE CASCADE,
+		title text NOT NULL,
+		description text DEFAULT '' NOT NULL,
+		category text DEFAULT 'active_lead' NOT NULL,
+		deadline text,
+		urgency text DEFAULT 'medium' NOT NULL,
+		status text DEFAULT 'active' NOT NULL,
+		related_npc_ids text DEFAULT '[]' NOT NULL,
+		related_item_ids text DEFAULT '[]' NOT NULL,
+		notes text,
+		created_at integer NOT NULL,
+		updated_at integer NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS dm_item (
+		id text PRIMARY KEY NOT NULL,
+		campaign_id text NOT NULL REFERENCES dm_campaign(id) ON DELETE CASCADE,
+		name text NOT NULL,
+		description text DEFAULT '' NOT NULL,
+		mechanical_properties text DEFAULT '' NOT NULL,
+		narrative_properties text DEFAULT '' NOT NULL,
+		origin text DEFAULT '' NOT NULL,
+		current_holder text,
+		is_quest_giver integer DEFAULT 0 NOT NULL,
+		quest_hooks text DEFAULT '[]' NOT NULL,
+		tags text DEFAULT '[]' NOT NULL,
+		notes text,
+		created_at integer NOT NULL,
+		updated_at integer NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS dm_npc (
+		id text PRIMARY KEY NOT NULL,
+		campaign_id text NOT NULL REFERENCES dm_campaign(id) ON DELETE CASCADE,
+		name text NOT NULL,
+		race text,
+		description text DEFAULT '' NOT NULL,
+		location text,
+		voice text DEFAULT '' NOT NULL,
+		temperament text DEFAULT '' NOT NULL,
+		stance text DEFAULT 'Neutral' NOT NULL,
+		status_tags text DEFAULT '[]' NOT NULL,
+		secrets text DEFAULT '' NOT NULL,
+		rumor_pool text DEFAULT '[]' NOT NULL,
+		faction_id text,
+		alive integer DEFAULT 1 NOT NULL,
+		notes text,
+		created_at integer NOT NULL,
+		updated_at integer NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS dm_party_member (
+		id text PRIMARY KEY NOT NULL,
+		campaign_id text NOT NULL REFERENCES dm_campaign(id) ON DELETE CASCADE,
+		player_name text NOT NULL,
+		character_name text NOT NULL,
+		race text,
+		class text,
+		level integer DEFAULT 1 NOT NULL,
+		backstory_hooks text DEFAULT '' NOT NULL,
+		notable_items text DEFAULT '[]' NOT NULL,
+		relationships text DEFAULT '' NOT NULL,
+		notes text,
+		created_at integer NOT NULL
+	);
 `);
 
 export { client };
@@ -396,6 +777,15 @@ export const db = drizzle(client, {
 		mealPlanRecipe,
 		shoppingList,
 		shoppingListItem,
+		dmCampaign,
+		dmSource,
+		dmSession,
+		dmFaction,
+		dmConsequence,
+		dmQuest,
+		dmItem,
+		dmNpc,
+		dmPartyMember,
 		chatSessionRelations,
 		messageRelations,
 		agentRelations,
@@ -404,7 +794,16 @@ export const db = drizzle(client, {
 		mealPlanRelations,
 		mealPlanRecipeRelations,
 		shoppingListRelations,
-		shoppingListItemRelations
+		shoppingListItemRelations,
+		dmCampaignRelations,
+		dmSourceRelations,
+		dmSessionRelations,
+		dmFactionRelations,
+		dmConsequenceRelations,
+		dmQuestRelations,
+		dmItemRelations,
+		dmNpcRelations,
+		dmPartyMemberRelations
 	}
 });
 
