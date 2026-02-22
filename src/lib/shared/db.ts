@@ -211,6 +211,7 @@ export const dmCampaign = sqliteTable('dm_campaign', {
 	name: text('name').notNull(),
 	description: text('description').notNull().default(''),
 	chatSessionId: text('chat_session_id'),
+	currentGameDay: integer('current_game_day').notNull().default(1),
 	createdAt: integer('created_at', { mode: 'timestamp' })
 		.notNull()
 		.$defaultFn(() => new Date()),
@@ -254,6 +255,7 @@ export const dmSession = sqliteTable('dm_session', {
 	playerRecap: text('player_recap'),
 	nextSessionHooks: text('next_session_hooks'),
 	chatSessionId: text('chat_session_id'),
+	notes: text('notes'),
 	createdAt: integer('created_at', { mode: 'timestamp' })
 		.notNull()
 		.$defaultFn(() => new Date()),
@@ -400,6 +402,53 @@ export const dmPartyMember = sqliteTable('dm_party_member', {
 		.$defaultFn(() => new Date())
 });
 
+export const dmLocation = sqliteTable('dm_location', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	campaignId: text('campaign_id')
+		.notNull()
+		.references(() => dmCampaign.id, { onDelete: 'cascade' }),
+	name: text('name').notNull(),
+	locationType: text('location_type', {
+		enum: ['city', 'town', 'village', 'dungeon', 'wilderness', 'building', 'region', 'other']
+	})
+		.notNull()
+		.default('other'),
+	description: text('description').notNull().default(''),
+	parentLocationId: text('parent_location_id'),
+	linkedNpcIds: text('linked_npc_ids').notNull().default('[]'),
+	linkedQuestIds: text('linked_quest_ids').notNull().default('[]'),
+	tags: text('tags').notNull().default('[]'),
+	notes: text('notes'),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	updatedAt: integer('updated_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
+export const dmCalendarEvent = sqliteTable('dm_calendar_event', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	campaignId: text('campaign_id')
+		.notNull()
+		.references(() => dmCampaign.id, { onDelete: 'cascade' }),
+	title: text('title').notNull(),
+	description: text('description').notNull().default(''),
+	gameDay: integer('game_day').notNull(),
+	category: text('category', {
+		enum: ['quest_deadline', 'festival', 'political', 'travel', 'combat', 'note']
+	})
+		.notNull()
+		.default('note'),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
 // ============== RELATIONS ==============
 
 // Relations
@@ -474,7 +523,9 @@ export const dmCampaignRelations = relations(dmCampaign, ({ many }) => ({
 	quests: many(dmQuest),
 	items: many(dmItem),
 	npcs: many(dmNpc),
-	partyMembers: many(dmPartyMember)
+	partyMembers: many(dmPartyMember),
+	locations: many(dmLocation),
+	calendarEvents: many(dmCalendarEvent)
 }));
 
 export const dmSourceRelations = relations(dmSource, ({ one }) => ({
@@ -529,6 +580,20 @@ export const dmNpcRelations = relations(dmNpc, ({ one }) => ({
 export const dmPartyMemberRelations = relations(dmPartyMember, ({ one }) => ({
 	campaign: one(dmCampaign, {
 		fields: [dmPartyMember.campaignId],
+		references: [dmCampaign.id]
+	})
+}));
+
+export const dmLocationRelations = relations(dmLocation, ({ one }) => ({
+	campaign: one(dmCampaign, {
+		fields: [dmLocation.campaignId],
+		references: [dmCampaign.id]
+	})
+}));
+
+export const dmCalendarEventRelations = relations(dmCalendarEvent, ({ one }) => ({
+	campaign: one(dmCampaign, {
+		fields: [dmCalendarEvent.campaignId],
 		references: [dmCampaign.id]
 	})
 }));
@@ -651,6 +716,7 @@ client.exec(`
 		name text NOT NULL,
 		description text DEFAULT '' NOT NULL,
 		chat_session_id text,
+		current_game_day integer DEFAULT 1 NOT NULL,
 		created_at integer NOT NULL,
 		updated_at integer NOT NULL
 	);
@@ -674,6 +740,7 @@ client.exec(`
 		player_recap text,
 		next_session_hooks text,
 		chat_session_id text,
+		notes text,
 		created_at integer NOT NULL,
 		started_at integer,
 		completed_at integer
@@ -761,6 +828,29 @@ client.exec(`
 		notes text,
 		created_at integer NOT NULL
 	);
+	CREATE TABLE IF NOT EXISTS dm_location (
+		id text PRIMARY KEY NOT NULL,
+		campaign_id text NOT NULL REFERENCES dm_campaign(id) ON DELETE CASCADE,
+		name text NOT NULL,
+		location_type text DEFAULT 'other' NOT NULL,
+		description text DEFAULT '' NOT NULL,
+		parent_location_id text,
+		linked_npc_ids text DEFAULT '[]' NOT NULL,
+		linked_quest_ids text DEFAULT '[]' NOT NULL,
+		tags text DEFAULT '[]' NOT NULL,
+		notes text,
+		created_at integer NOT NULL,
+		updated_at integer NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS dm_calendar_event (
+		id text PRIMARY KEY NOT NULL,
+		campaign_id text NOT NULL REFERENCES dm_campaign(id) ON DELETE CASCADE,
+		title text NOT NULL,
+		description text DEFAULT '' NOT NULL,
+		game_day integer NOT NULL,
+		category text DEFAULT 'note' NOT NULL,
+		created_at integer NOT NULL
+	);
 `);
 
 export { client };
@@ -786,6 +876,8 @@ export const db = drizzle(client, {
 		dmItem,
 		dmNpc,
 		dmPartyMember,
+		dmLocation,
+		dmCalendarEvent,
 		chatSessionRelations,
 		messageRelations,
 		agentRelations,
@@ -803,9 +895,86 @@ export const db = drizzle(client, {
 		dmQuestRelations,
 		dmItemRelations,
 		dmNpcRelations,
-		dmPartyMemberRelations
+		dmPartyMemberRelations,
+		dmLocationRelations,
+		dmCalendarEventRelations
 	}
 });
+
+// Initialize DM tables on first run
+function initializeDmTables() {
+	try {
+		// Check if dm_location table exists, create if not
+		const locationTableExists =
+			client
+				.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='dm_location'`)
+				.all().length > 0;
+		if (!locationTableExists) {
+			client.exec(`
+				CREATE TABLE IF NOT EXISTS dm_location (
+					id TEXT PRIMARY KEY,
+					campaign_id TEXT NOT NULL,
+					name TEXT NOT NULL,
+					location_type TEXT DEFAULT 'city',
+					description TEXT,
+					parent_location_id TEXT,
+					linked_npc_ids TEXT DEFAULT '[]',
+					linked_quest_ids TEXT DEFAULT '[]',
+					tags TEXT DEFAULT '[]',
+					notes TEXT,
+					created_at INTEGER NOT NULL,
+					updated_at INTEGER NOT NULL,
+					FOREIGN KEY (campaign_id) REFERENCES dm_campaign(id) ON DELETE CASCADE,
+					FOREIGN KEY (parent_location_id) REFERENCES dm_location(id) ON DELETE SET NULL
+				);
+			`);
+		}
+
+		// Check if dm_calendar_event table exists, create if not
+		const calendarTableExists =
+			client
+				.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='dm_calendar_event'`)
+				.all().length > 0;
+		if (!calendarTableExists) {
+			client.exec(`
+				CREATE TABLE IF NOT EXISTS dm_calendar_event (
+					id TEXT PRIMARY KEY,
+					campaign_id TEXT NOT NULL,
+					title TEXT NOT NULL,
+					description TEXT,
+					game_day INTEGER NOT NULL,
+					category TEXT DEFAULT 'note',
+					created_at INTEGER NOT NULL,
+					FOREIGN KEY (campaign_id) REFERENCES dm_campaign(id) ON DELETE CASCADE
+				);
+			`);
+		}
+
+		// Ensure dm_session has notes and dm_campaign has current_game_day columns
+		const sessionColumns = client.prepare(`PRAGMA table_info(dm_session)`).all() as Array<{
+			name: string;
+		}>;
+		const sessionHasNotes = sessionColumns.some((col) => col.name === 'notes');
+		if (!sessionHasNotes) {
+			client.exec(`ALTER TABLE dm_session ADD COLUMN notes TEXT;`);
+		}
+
+		const campaignColumns = client.prepare(`PRAGMA table_info(dm_campaign)`).all() as Array<{
+			name: string;
+		}>;
+		const campaignHasGameDay = campaignColumns.some((col) => col.name === 'current_game_day');
+		if (!campaignHasGameDay) {
+			client.exec(
+				`ALTER TABLE dm_campaign ADD COLUMN current_game_day INTEGER NOT NULL DEFAULT 1;`
+			);
+		}
+	} catch (error) {
+		console.error('Failed to initialize DM tables:', error);
+	}
+}
+
+// Run initialization
+initializeDmTables();
 
 // Vector database (sqlite-vec)
 if (!env.VECTOR_DB_URL) throw new Error('VECTOR_DB_URL is not set');

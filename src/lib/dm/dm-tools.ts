@@ -11,10 +11,10 @@ import {
 	createItem,
 	updatePartyMember,
 	searchSourceBook,
-	getCampaignContext,
 	getNpcs,
 	getFactions
 } from '$lib/dm/dm.remote';
+import { getCampaignContext } from '$lib/dm/dm-helpers.server';
 import { chatSimple } from '$lib/chat/chat';
 import type { ChatMessage } from '$lib/chat/chat';
 

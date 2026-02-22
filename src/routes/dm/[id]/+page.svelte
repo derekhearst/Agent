@@ -15,6 +15,13 @@
 	import DmEditModal from '$lib/dm/DmEditModal.svelte';
 	import DiceRoller from '$lib/dm/DiceRoller.svelte';
 	import SessionTimeline from '$lib/dm/SessionTimeline.svelte';
+	import SessionScratchpad from '$lib/dm/SessionScratchpad.svelte';
+	import RuleQuickLookup from '$lib/dm/RuleQuickLookup.svelte';
+	import LocationTracker from '$lib/dm/LocationTracker.svelte';
+	import InGameCalendar from '$lib/dm/InGameCalendar.svelte';
+	import CampaignExportImport from '$lib/dm/CampaignExportImport.svelte';
+	import RandomGenerators from '$lib/dm/RandomGenerators.svelte';
+	import RelationshipWeb from '$lib/dm/RelationshipWeb.svelte';
 	import {
 		getCampaignById,
 		updateCampaign,
@@ -48,7 +55,16 @@
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let campaign = $state<any>(null);
 	let isLoading = $state(true);
-	type TabKey = 'overview' | 'sessions' | 'sources' | 'world' | 'npcs' | 'items' | 'party';
+	type TabKey =
+		| 'overview'
+		| 'sessions'
+		| 'sources'
+		| 'world'
+		| 'npcs'
+		| 'items'
+		| 'party'
+		| 'locations'
+		| 'calendar';
 	let activeTab = $state<TabKey>('overview');
 
 	// Modal state
@@ -389,6 +405,7 @@
 					{/if}
 				</div>
 				<div class="flex items-center gap-2">
+					<CampaignExportImport {campaignId} campaignName={campaign.name} />
 					{#if activeSession}
 						<span class="badge badge-warning">Session {activeSession.sessionNumber} Active</span>
 						<button
@@ -416,7 +433,7 @@
 			<!-- Tabs -->
 			<div class="border-b border-base-300 px-4">
 				<div role="tablist" class="tabs-bordered tabs">
-					{#each [{ key: 'overview', label: '📊 Overview' }, { key: 'sessions', label: '📋 Sessions' }, { key: 'sources', label: '📚 Sources' }, { key: 'world', label: '🌍 World State' }, { key: 'npcs', label: '👤 NPCs' }, { key: 'items', label: '⚔️ Items' }, { key: 'party', label: '🛡️ Party' }] as tab (tab.key)}
+					{#each [{ key: 'overview', label: '📊 Overview' }, { key: 'sessions', label: '📋 Sessions' }, { key: 'sources', label: '📚 Sources' }, { key: 'world', label: '🌍 World State' }, { key: 'npcs', label: '👤 NPCs' }, { key: 'items', label: '⚔️ Items' }, { key: 'party', label: '🛡️ Party' }, { key: 'locations', label: '📍 Locations' }, { key: 'calendar', label: '📅 Calendar' }] as tab (tab.key)}
 						<button
 							role="tab"
 							class="tab"
@@ -512,6 +529,8 @@
 									/>
 								{/if}
 								<DiceRoller />
+								<RandomGenerators />
+								<RuleQuickLookup {campaignId} />
 								{#if campaign.sessions?.length > 0}
 									<SessionTimeline
 										sessions={campaign.sessions}
@@ -528,6 +547,20 @@
 								style="height: clamp(300px, 40vh, 600px);"
 							>
 								<DmChatBox {campaignId} sessionId={campaign.chatSessionId} />
+							</div>
+						{/if}
+
+						<!-- Relationship Web -->
+						{#if campaign.npcs?.length > 0 || campaign.factions?.length > 0}
+							<div class="mt-4">
+								<RelationshipWeb npcs={campaign.npcs || []} factions={campaign.factions || []} />
+							</div>
+						{/if}
+
+						<!-- Session Scratchpad for active session -->
+						{#if activeSession}
+							<div class="mt-4">
+								<SessionScratchpad session={activeSession} {campaignId} onUpdate={loadCampaign} />
 							</div>
 						{/if}
 					{:else if activeTab === 'sessions'}
@@ -608,6 +641,12 @@
 													/>
 												</div>
 											{/if}
+
+											{#if session.status === 'active'}
+												<div class="mt-3">
+													<SessionScratchpad {session} {campaignId} onUpdate={loadCampaign} />
+												</div>
+											{/if}
 										</div>
 									{/each}
 								</div>
@@ -668,6 +707,21 @@
 							members={campaign.partyMembers || []}
 							onAdd={handleAddPartyMember}
 							onEdit={(m) => openModal('party', m)}
+						/>
+					{:else if activeTab === 'locations'}
+						<LocationTracker
+							locations={campaign.locations || []}
+							npcs={campaign.npcs || []}
+							quests={campaign.quests || []}
+							{campaignId}
+							onUpdate={loadCampaign}
+						/>
+					{:else if activeTab === 'calendar'}
+						<InGameCalendar
+							events={campaign.calendarEvents || []}
+							currentGameDay={campaign.currentGameDay || 1}
+							{campaignId}
+							onUpdate={loadCampaign}
 						/>
 					{/if}
 				</div>

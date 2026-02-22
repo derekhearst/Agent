@@ -1,5 +1,6 @@
 // DM System Prompt Builder — Constructs D&D 5e aware system prompts for DM chat
-import { getCampaignContext, searchSourceBook, getSessionById } from '$lib/dm/dm.remote';
+import { getCampaignContext } from '$lib/dm/dm-helpers.server';
+import { searchSourceBook, getSessionById } from '$lib/dm/dm.remote';
 
 const DM_BASE_PROMPT = `You are an expert D&D 5e Dungeon Master assistant. You help the DM run their campaign by:
 

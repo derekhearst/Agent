@@ -164,7 +164,7 @@
 						</div>
 						<div>
 							<label class="label text-sm font-medium">Model</label>
-							<ModelSelector currentModel={editModel} onModelChange={(m) => editModel = m} />
+							<ModelSelector currentModel={editModel} onModelChange={(m) => (editModel = m)} />
 						</div>
 					</div>
 

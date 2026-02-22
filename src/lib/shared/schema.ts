@@ -190,6 +190,7 @@ export const dmCampaign = sqliteTable('dm_campaign', {
 	name: text('name').notNull(),
 	description: text('description').notNull().default(''),
 	chatSessionId: text('chat_session_id'),
+	currentGameDay: integer('current_game_day').notNull().default(1), // in-game calendar day
 	createdAt: integer('created_at', { mode: 'timestamp' })
 		.notNull()
 		.$defaultFn(() => new Date()),
@@ -235,6 +236,7 @@ export const dmSession = sqliteTable('dm_session', {
 	playerRecap: text('player_recap'),
 	nextSessionHooks: text('next_session_hooks'), // JSON array of 3 hook strings
 	chatSessionId: text('chat_session_id'),
+	notes: text('notes'), // DM scratchpad notes during session
 	createdAt: integer('created_at', { mode: 'timestamp' })
 		.notNull()
 		.$defaultFn(() => new Date()),
@@ -382,6 +384,55 @@ export const dmPartyMember = sqliteTable('dm_party_member', {
 	notableItems: text('notable_items').notNull().default('[]'), // JSON array
 	relationships: text('relationships').notNull().default(''), // NPC relationships
 	notes: text('notes'),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
+// DM Locations (world wiki)
+export const dmLocation = sqliteTable('dm_location', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	campaignId: text('campaign_id')
+		.notNull()
+		.references(() => dmCampaign.id, { onDelete: 'cascade' }),
+	name: text('name').notNull(),
+	locationType: text('location_type', {
+		enum: ['city', 'town', 'village', 'dungeon', 'wilderness', 'building', 'region', 'other']
+	})
+		.notNull()
+		.default('other'),
+	description: text('description').notNull().default(''),
+	parentLocationId: text('parent_location_id'), // for nested locations (building in a city)
+	linkedNpcIds: text('linked_npc_ids').notNull().default('[]'), // JSON array
+	linkedQuestIds: text('linked_quest_ids').notNull().default('[]'), // JSON array
+	tags: text('tags').notNull().default('[]'), // JSON: ["safe", "dangerous", "visited"]
+	notes: text('notes'),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	updatedAt: integer('updated_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
+// DM Calendar Events (in-game timeline)
+export const dmCalendarEvent = sqliteTable('dm_calendar_event', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	campaignId: text('campaign_id')
+		.notNull()
+		.references(() => dmCampaign.id, { onDelete: 'cascade' }),
+	title: text('title').notNull(),
+	description: text('description').notNull().default(''),
+	gameDay: integer('game_day').notNull(), // day number in campaign (1-based)
+	category: text('category', {
+		enum: ['quest_deadline', 'festival', 'political', 'travel', 'combat', 'note']
+	})
+		.notNull()
+		.default('note'),
 	createdAt: integer('created_at', { mode: 'timestamp' })
 		.notNull()
 		.$defaultFn(() => new Date())

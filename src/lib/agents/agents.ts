@@ -223,7 +223,7 @@ function trimImageMessages(messages: unknown[], maxImages: number): void {
  * Build a compressed summary of what the agent has accomplished so far,
  * for use when restarting context after a nudge.
  */
-function buildProgressSummary(toolCallLog: AgentRunResult['toolCalls'], agentName: string): string {
+function buildProgressSummary(toolCallLog: AgentRunResult['toolCalls']): string {
 	const savedRecipes = toolCallLog.filter((t) => t.tool === 'save_recipe');
 	const mealPlanCalls = toolCallLog.filter((t) => t.tool === 'create_meal_plan');
 	const browseCalls = toolCallLog.filter(
@@ -495,7 +495,10 @@ export async function runAgentJob(agentConfig: AgentConfig): Promise<AgentRunRes
 					// If images were returned, add them as a separate user message
 					// (tool messages only support string content)
 					if (toolResult.images?.length) {
-						const imageMsg: any = {
+						const imageMsg: {
+							role: string;
+							content: Array<{ type: string; text?: string; source?: object }>;
+						} = {
 							role: 'user',
 							content: [
 								{

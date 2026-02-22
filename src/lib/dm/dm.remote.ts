@@ -13,6 +13,8 @@ import {
 	dmItem,
 	dmNpc,
 	dmPartyMember,
+	dmLocation,
+	dmCalendarEvent,
 	chatSession,
 	message
 } from '$lib/shared/db';
@@ -54,7 +56,9 @@ export const getCampaignById = query(z.string(), async (id) => {
 			quests: { orderBy: [asc(dmQuest.title)] },
 			items: { orderBy: [asc(dmItem.name)] },
 			npcs: { orderBy: [asc(dmNpc.name)] },
-			partyMembers: { orderBy: [asc(dmPartyMember.characterName)] }
+			partyMembers: { orderBy: [asc(dmPartyMember.characterName)] },
+			locations: { orderBy: [asc(dmLocation.name)] },
+			calendarEvents: { orderBy: [asc(dmCalendarEvent.gameDay)] }
 		}
 	});
 	if (!campaign) throw new Error('Campaign not found');
@@ -92,13 +96,15 @@ export const createCampaign = command(createCampaignSchema, async (data) => {
 const updateCampaignSchema = z.object({
 	id: z.string(),
 	name: z.string().optional(),
-	description: z.string().optional()
+	description: z.string().optional(),
+	currentGameDay: z.number().optional()
 });
 
 export const updateCampaign = command(updateCampaignSchema, async (data) => {
 	const updateData: Record<string, unknown> = { updatedAt: new Date() };
 	if (data.name !== undefined) updateData.name = data.name;
 	if (data.description !== undefined) updateData.description = data.description;
+	if (data.currentGameDay !== undefined) updateData.currentGameDay = data.currentGameDay;
 
 	const [updated] = await db
 		.update(dmCampaign)
@@ -937,193 +943,392 @@ export const deletePartyMember = command(
 	}
 );
 
-// ============== CAMPAIGN CONTEXT BUILDER ==============
+// ============== LOCATIONS ==============
 
-/** Build full campaign context string for system prompt injection */
-export async function getCampaignContext(campaignId: string): Promise<string> {
+export const getLocations = query(z.string(), async (campaignId) => {
+	return await db.query.dmLocation.findMany({
+		where: eq(dmLocation.campaignId, campaignId),
+		orderBy: [asc(dmLocation.name)]
+	});
+});
+
+const createLocationSchema = z.object({
+	campaignId: z.string(),
+	name: z.string().min(1),
+	locationType: z
+		.enum(['city', 'town', 'village', 'dungeon', 'wilderness', 'building', 'region', 'other'])
+		.optional()
+		.default('other'),
+	description: z.string().optional().default(''),
+	parentLocationId: z.string().optional(),
+	linkedNpcIds: z.string().optional().default('[]'),
+	linkedQuestIds: z.string().optional().default('[]'),
+	tags: z.string().optional().default('[]'),
+	notes: z.string().optional()
+});
+
+export const createLocation = command(createLocationSchema, async (data) => {
+	const [location] = await db.insert(dmLocation).values(data).returning();
+	await getLocations(data.campaignId).refresh();
+	await getCampaignById(data.campaignId).refresh();
+	return location;
+});
+
+const updateLocationSchema = z.object({
+	id: z.string(),
+	campaignId: z.string(),
+	name: z.string().optional(),
+	locationType: z
+		.enum(['city', 'town', 'village', 'dungeon', 'wilderness', 'building', 'region', 'other'])
+		.optional(),
+	description: z.string().optional(),
+	parentLocationId: z.string().nullable().optional(),
+	linkedNpcIds: z.string().optional(),
+	linkedQuestIds: z.string().optional(),
+	tags: z.string().optional(),
+	notes: z.string().optional()
+});
+
+export const updateLocation = command(updateLocationSchema, async (data) => {
+	const updateData: Record<string, unknown> = { updatedAt: new Date() };
+	if (data.name !== undefined) updateData.name = data.name;
+	if (data.locationType !== undefined) updateData.locationType = data.locationType;
+	if (data.description !== undefined) updateData.description = data.description;
+	if (data.parentLocationId !== undefined) updateData.parentLocationId = data.parentLocationId;
+	if (data.linkedNpcIds !== undefined) updateData.linkedNpcIds = data.linkedNpcIds;
+	if (data.linkedQuestIds !== undefined) updateData.linkedQuestIds = data.linkedQuestIds;
+	if (data.tags !== undefined) updateData.tags = data.tags;
+	if (data.notes !== undefined) updateData.notes = data.notes;
+
+	const [updated] = await db
+		.update(dmLocation)
+		.set(updateData)
+		.where(eq(dmLocation.id, data.id))
+		.returning();
+
+	await getLocations(data.campaignId).refresh();
+	await getCampaignById(data.campaignId).refresh();
+	return updated;
+});
+
+export const deleteLocation = command(
+	z.object({ id: z.string(), campaignId: z.string() }),
+	async ({ id, campaignId }) => {
+		await db.delete(dmLocation).where(eq(dmLocation.id, id));
+		await getLocations(campaignId).refresh();
+		await getCampaignById(campaignId).refresh();
+		return { success: true };
+	}
+);
+
+// ============== CALENDAR EVENTS ==============
+
+export const getCalendarEvents = query(z.string(), async (campaignId) => {
+	return await db.query.dmCalendarEvent.findMany({
+		where: eq(dmCalendarEvent.campaignId, campaignId),
+		orderBy: [asc(dmCalendarEvent.gameDay)]
+	});
+});
+
+const createCalendarEventSchema = z.object({
+	campaignId: z.string(),
+	title: z.string().min(1),
+	description: z.string().optional().default(''),
+	gameDay: z.number().int().min(1),
+	category: z
+		.enum(['quest_deadline', 'festival', 'political', 'travel', 'combat', 'note'])
+		.optional()
+		.default('note')
+});
+
+export const createCalendarEvent = command(createCalendarEventSchema, async (data) => {
+	const [event] = await db.insert(dmCalendarEvent).values(data).returning();
+	await getCalendarEvents(data.campaignId).refresh();
+	await getCampaignById(data.campaignId).refresh();
+	return event;
+});
+
+const updateCalendarEventSchema = z.object({
+	id: z.string(),
+	campaignId: z.string(),
+	title: z.string().optional(),
+	description: z.string().optional(),
+	gameDay: z.number().int().min(1).optional(),
+	category: z
+		.enum(['quest_deadline', 'festival', 'political', 'travel', 'combat', 'note'])
+		.optional()
+});
+
+export const updateCalendarEvent = command(updateCalendarEventSchema, async (data) => {
+	const updateData: Record<string, unknown> = {};
+	if (data.title !== undefined) updateData.title = data.title;
+	if (data.description !== undefined) updateData.description = data.description;
+	if (data.gameDay !== undefined) updateData.gameDay = data.gameDay;
+	if (data.category !== undefined) updateData.category = data.category;
+
+	const [updated] = await db
+		.update(dmCalendarEvent)
+		.set(updateData)
+		.where(eq(dmCalendarEvent.id, data.id))
+		.returning();
+
+	await getCalendarEvents(data.campaignId).refresh();
+	await getCampaignById(data.campaignId).refresh();
+	return updated;
+});
+
+export const deleteCalendarEvent = command(
+	z.object({ id: z.string(), campaignId: z.string() }),
+	async ({ id, campaignId }) => {
+		await db.delete(dmCalendarEvent).where(eq(dmCalendarEvent.id, id));
+		await getCalendarEvents(campaignId).refresh();
+		await getCampaignById(campaignId).refresh();
+		return { success: true };
+	}
+);
+
+// ============== SESSION NOTES ==============
+
+export const updateSessionNotes = command(
+	z.object({ sessionId: z.string(), campaignId: z.string(), notes: z.string() }),
+	async ({ sessionId, campaignId, notes }) => {
+		const [updated] = await db
+			.update(dmSession)
+			.set({ notes })
+			.where(eq(dmSession.id, sessionId))
+			.returning();
+
+		await getCampaignById(campaignId).refresh();
+		return updated;
+	}
+);
+
+// ============== CAMPAIGN EXPORT / IMPORT ==============
+
+export const exportCampaign = query(z.string(), async (campaignId) => {
 	const campaign = await db.query.dmCampaign.findFirst({
 		where: eq(dmCampaign.id, campaignId),
 		with: {
+			sources: true,
+			sessions: true,
 			factions: true,
-			consequences: { orderBy: [desc(dmConsequence.createdAt)], limit: 20 },
+			consequences: true,
 			quests: true,
 			items: true,
 			npcs: true,
 			partyMembers: true,
-			sessions: { orderBy: [desc(dmSession.sessionNumber)], limit: 5 }
+			locations: true,
+			calendarEvents: true
 		}
 	});
+	if (!campaign) throw new Error('Campaign not found');
+	return {
+		version: 1,
+		exportedAt: new Date().toISOString(),
+		campaign
+	};
+});
 
-	if (!campaign) return '';
+export const importCampaign = command(z.string(), async (jsonStr) => {
+	const data = JSON.parse(jsonStr);
+	const src = data.campaign;
+	if (!src?.name) throw new Error('Invalid campaign data');
 
-	const parts: string[] = [];
+	// Create campaign chat session
+	const [campaignChat] = await db
+		.insert(chatSession)
+		.values({ title: `DM: ${src.name}`, model: 'moonshotai/kimi-k2.5' })
+		.returning();
 
-	parts.push(`# Campaign: ${campaign.name}`);
-	if (campaign.description) parts.push(campaign.description);
+	const [campaign] = await db
+		.insert(dmCampaign)
+		.values({
+			name: src.name,
+			description: src.description || '',
+			chatSessionId: campaignChat.id,
+			currentGameDay: src.currentGameDay || 1
+		})
+		.returning();
 
-	// Party
-	if (campaign.partyMembers.length > 0) {
-		parts.push('\n## Party');
-		for (const m of campaign.partyMembers) {
-			parts.push(
-				`- **${m.characterName}** (${m.race} ${m.class} Lv${m.level}, Player: ${m.playerName})`
-			);
-			if (m.backstoryHooks) parts.push(`  Backstory Hooks: ${m.backstoryHooks}`);
-			if (m.notableItems !== '[]') parts.push(`  Notable Items: ${m.notableItems}`);
-			if (m.relationships) parts.push(`  Relationships: ${m.relationships}`);
+	const cid = campaign.id;
+
+	// Import each entity type
+	if (src.factions?.length) {
+		for (const f of src.factions) {
+			await db.insert(dmFaction).values({
+				campaignId: cid,
+				name: f.name,
+				description: f.description || '',
+				reputation: f.reputation || 0,
+				thresholdNotes: f.thresholdNotes || '[]',
+				notes: f.notes
+			});
+		}
+	}
+	if (src.npcs?.length) {
+		for (const n of src.npcs) {
+			await db.insert(dmNpc).values({
+				campaignId: cid,
+				name: n.name,
+				race: n.race,
+				description: n.description || '',
+				location: n.location,
+				voice: n.voice || '',
+				temperament: n.temperament || '',
+				stance: n.stance || 'Neutral',
+				statusTags: n.statusTags || '[]',
+				secrets: n.secrets || '',
+				rumorPool: n.rumorPool || '[]',
+				factionId: n.factionId,
+				alive: n.alive ?? true,
+				notes: n.notes
+			});
+		}
+	}
+	if (src.quests?.length) {
+		for (const q of src.quests) {
+			await db.insert(dmQuest).values({
+				campaignId: cid,
+				title: q.title,
+				description: q.description || '',
+				category: q.category || 'active_lead',
+				deadline: q.deadline,
+				urgency: q.urgency || 'medium',
+				status: q.status || 'active',
+				relatedNpcIds: q.relatedNpcIds || '[]',
+				relatedItemIds: q.relatedItemIds || '[]',
+				notes: q.notes
+			});
+		}
+	}
+	if (src.items?.length) {
+		for (const i of src.items) {
+			await db.insert(dmItem).values({
+				campaignId: cid,
+				name: i.name,
+				description: i.description || '',
+				mechanicalProperties: i.mechanicalProperties || '',
+				narrativeProperties: i.narrativeProperties || '',
+				origin: i.origin || '',
+				currentHolder: i.currentHolder,
+				isQuestGiver: i.isQuestGiver ?? false,
+				questHooks: i.questHooks || '[]',
+				tags: i.tags || '[]',
+				notes: i.notes
+			});
+		}
+	}
+	if (src.partyMembers?.length) {
+		for (const p of src.partyMembers) {
+			await db.insert(dmPartyMember).values({
+				campaignId: cid,
+				playerName: p.playerName,
+				characterName: p.characterName,
+				race: p.race,
+				class: p.class,
+				level: p.level || 1,
+				backstoryHooks: p.backstoryHooks || '',
+				notableItems: p.notableItems || '[]',
+				relationships: p.relationships || '',
+				notes: p.notes
+			});
+		}
+	}
+	if (src.locations?.length) {
+		for (const l of src.locations) {
+			await db.insert(dmLocation).values({
+				campaignId: cid,
+				name: l.name,
+				locationType: l.locationType || 'other',
+				description: l.description || '',
+				parentLocationId: l.parentLocationId,
+				linkedNpcIds: l.linkedNpcIds || '[]',
+				linkedQuestIds: l.linkedQuestIds || '[]',
+				tags: l.tags || '[]',
+				notes: l.notes
+			});
+		}
+	}
+	if (src.calendarEvents?.length) {
+		for (const e of src.calendarEvents) {
+			await db.insert(dmCalendarEvent).values({
+				campaignId: cid,
+				title: e.title,
+				description: e.description || '',
+				gameDay: e.gameDay,
+				category: e.category || 'note'
+			});
+		}
+	}
+	if (src.consequences?.length) {
+		for (const c of src.consequences) {
+			await db.insert(dmConsequence).values({
+				campaignId: cid,
+				sessionId: c.sessionId,
+				action: c.action,
+				results: c.results || '[]'
+			});
+		}
+	}
+	// Sources are imported but NOT vectorized (user can re-vectorize)
+	if (src.sources?.length) {
+		for (const s of src.sources) {
+			await db.insert(dmSource).values({
+				campaignId: cid,
+				title: s.title,
+				content: s.content,
+				type: s.type || 'paste',
+				vectorized: false
+			});
 		}
 	}
 
-	// Factions
-	if (campaign.factions.length > 0) {
-		parts.push('\n## Faction Standings');
-		for (const f of campaign.factions) {
-			let label = 'Neutral';
-			try {
-				const thresholds = JSON.parse(f.thresholdNotes) as Array<{
-					at: number;
-					label: string;
-					effects: string;
-				}>;
-				const sorted = thresholds.sort((a, b) => b.at - a.at);
-				for (const t of sorted) {
-					if (f.reputation >= t.at) {
-						label = t.label;
-						break;
-					}
-				}
-			} catch {
-				/* use default */
-			}
-			parts.push(`- **${f.name}** [${f.reputation}/100]: ${label}`);
-			if (f.description) parts.push(`  ${f.description}`);
-		}
-	}
+	await getCampaigns().refresh();
+	return campaign;
+});
 
-	// Active Quests
-	const activeQuests = campaign.quests.filter((q) => q.status === 'active');
-	if (activeQuests.length > 0) {
-		parts.push('\n## Active Quests');
-		const deadlines = activeQuests.filter((q) => q.category === 'hard_deadline');
-		const leads = activeQuests.filter((q) => q.category === 'active_lead');
-		const rumors = activeQuests.filter((q) => q.category === 'rumor');
-		const side = activeQuests.filter((q) => q.category === 'side_quest');
+// ============== RULE QUICK-LOOKUP ==============
 
-		if (deadlines.length > 0) {
-			parts.push('### Hard Deadlines');
-			for (const q of deadlines) {
-				parts.push(
-					`- **${q.title}** [${q.urgency.toUpperCase()}]${q.deadline ? ` — ${q.deadline}` : ''}`
-				);
-				if (q.description) parts.push(`  ${q.description}`);
-			}
-		}
-		if (leads.length > 0) {
-			parts.push('### Active Leads');
-			for (const q of leads) {
-				parts.push(`- **${q.title}** [${q.urgency}]: ${q.description || ''}`);
-			}
-		}
-		if (rumors.length > 0) {
-			parts.push('### Rumors');
-			for (const q of rumors) parts.push(`- ${q.title}: ${q.description || ''}`);
-		}
-		if (side.length > 0) {
-			parts.push('### Side Quests');
-			for (const q of side) parts.push(`- ${q.title}: ${q.description || ''}`);
-		}
-	}
-
-	// Unresolved Consequences
-	const unresolvedConsequences = campaign.consequences.filter((c) => {
+export const ruleLookup = command(
+	z.object({ campaignId: z.string(), question: z.string().min(1) }),
+	async ({ campaignId, question }) => {
+		// Search vectorized source books
+		const sourcePrefix = `dm/${campaignId}/`;
+		let relevantContext = '';
 		try {
-			const results = JSON.parse(c.results) as Array<{ resolved?: boolean }>;
-			return results.some((r) => !r.resolved);
-		} catch {
-			return true;
-		}
-	});
-	if (unresolvedConsequences.length > 0) {
-		parts.push('\n## Unresolved Consequences (Butterfly Effect)');
-		for (const c of unresolvedConsequences.slice(0, 10)) {
-			parts.push(`- **Action**: ${c.action}`);
-			try {
-				const results = JSON.parse(c.results) as Array<{
-					description: string;
-					affectedEntity?: string;
-					resolved?: boolean;
-				}>;
-				for (const r of results.filter((r) => !r.resolved)) {
-					parts.push(
-						`  → ${r.description}${r.affectedEntity ? ` (affects: ${r.affectedEntity})` : ''}`
-					);
-				}
-			} catch {
-				/* skip */
+			const results = await searchMemoryInternal(question, 5, sourcePrefix);
+			if (results.length > 0) {
+				relevantContext = results.map((r: { content: string }) => r.content).join('\n---\n');
 			}
+		} catch (e) {
+			console.error('Vector search failed:', e);
 		}
-	}
 
-	// NPCs (alive, with stance info)
-	const aliveNpcs = campaign.npcs.filter((n) => n.alive);
-	if (aliveNpcs.length > 0) {
-		parts.push('\n## Known NPCs');
-		for (const n of aliveNpcs) {
-			const tags = n.statusTags !== '[]' ? ` [${JSON.parse(n.statusTags).join(', ')}]` : '';
-			parts.push(`- **${n.name}** (${n.race || 'Unknown'}) — Stance: ${n.stance}${tags}`);
-			if (n.location) parts.push(`  Location: ${n.location}`);
-			if (n.voice) parts.push(`  Voice: ${n.voice}`);
-			if (n.temperament) parts.push(`  Temperament: ${n.temperament}`);
-			if (n.secrets) parts.push(`  [SECRET] ${n.secrets}`);
-			if (n.rumorPool !== '[]') {
-				try {
-					const rumors = JSON.parse(n.rumorPool) as string[];
-					if (rumors.length > 0) parts.push(`  Rumor Pool: ${rumors.join('; ')}`);
-				} catch {
-					/* skip */
-				}
-			}
-			if (n.factionId) {
-				const faction = campaign.factions.find((f) => f.id === n.factionId);
-				if (faction) parts.push(`  Faction: ${faction.name} (Rep: ${faction.reputation})`);
-			}
+		if (!relevantContext) {
+			return {
+				answer: 'No source books found. Upload and vectorize source material first.',
+				sources: []
+			};
 		}
-	}
 
-	// Items (quest-givers and notable)
-	const notableItems = campaign.items.filter(
-		(i) => i.isQuestGiver || i.narrativeProperties || i.origin
-	);
-	if (notableItems.length > 0) {
-		parts.push('\n## Notable Items');
-		for (const i of notableItems) {
-			parts.push(
-				`- **${i.name}**${i.origin ? ` (${i.origin})` : ''}${i.currentHolder ? ` — Held by: ${i.currentHolder}` : ''}`
-			);
-			if (i.narrativeProperties) parts.push(`  Narrative: ${i.narrativeProperties}`);
-			if (i.isQuestGiver && i.questHooks !== '[]') {
-				try {
-					const hooks = JSON.parse(i.questHooks) as string[];
-					parts.push(`  Quest Hooks: ${hooks.join('; ')}`);
-				} catch {
-					/* skip */
-				}
-			}
-		}
-	}
+		const messages: ChatMessage[] = [
+			{
+				role: 'system',
+				content: `You are a D&D 5e rules expert. Answer the question using ONLY the provided source book context. Be concise and cite the source where possible. If the answer isn't in the sources, say so.\n\nSource Material:\n${relevantContext}`
+			},
+			{ role: 'user', content: question }
+		];
 
-	// Recent Session Recaps
-	const completedSessions = campaign.sessions.filter((s) => s.status === 'completed' && s.dmRecap);
-	if (completedSessions.length > 0) {
-		parts.push('\n## Recent Session Recaps (DM View)');
-		for (const s of completedSessions.slice(0, 3)) {
-			parts.push(`### Session ${s.sessionNumber}: ${s.title}`);
-			parts.push(s.dmRecap || '');
-		}
+		const result = await chatSimple(messages);
+		const answer =
+			(result.choices?.[0]?.message?.content as string) || 'Unable to generate answer.';
+		return { answer, sources: relevantContext.split('\n---\n').slice(0, 3) };
 	}
+);
 
-	return parts.join('\n');
-}
+// ============== CAMPAIGN CONTEXT BUILDER ==============
+// getCampaignContext is in dm-helpers.server.ts (cannot be exported from .remote.ts)
+import { getCampaignContext } from '$lib/dm/dm-helpers.server';
 
 // ============== HELPERS ==============
 

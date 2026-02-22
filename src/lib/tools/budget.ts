@@ -274,10 +274,7 @@ export const getFinancesTool: ToolHandler = {
 
 // ============== CREATE CATEGORY (DIRECT EXECUTION) ==============
 
-async function createCategory(
-	categoryName: string,
-	groupName: string
-): Promise<ToolExecuteResult> {
+async function createCategory(categoryName: string, groupName: string): Promise<ToolExecuteResult> {
 	try {
 		return await withBudgetApi(async () => {
 			// Find the category group
@@ -333,7 +330,8 @@ export const createCategoryTool: ToolHandler = {
 				properties: {
 					category_name: {
 						type: 'string',
-						description: 'The name of the new category to create (e.g. "Electronics", "Pet Supplies")'
+						description:
+							'The name of the new category to create (e.g. "Electronics", "Pet Supplies")'
 					},
 					group_name: {
 						type: 'string',
@@ -420,10 +418,7 @@ export const assignCategoryTool: ToolHandler = {
 
 // ============== UPDATE TRANSACTION NOTES (DIRECT EXECUTION) ==============
 
-async function updateNotes(
-	transactionId: string,
-	notes: string
-): Promise<ToolExecuteResult> {
+async function updateNotes(transactionId: string, notes: string): Promise<ToolExecuteResult> {
 	try {
 		return await withBudgetApi(async () => {
 			// Update the transaction notes
